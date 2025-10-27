@@ -1,0 +1,36 @@
+# //BUILD.bazel
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+cmake(
+    name = "qgroundcontrol_cmake",
+    # QGC 原始碼來源
+    lib_source = "@qgroundcontrol_src//:all",
+    # 期望的輸出二進制檔案名稱
+    out_binaries = ["QGroundControl"],
+    
+    # --- 關鍵的配置注入點：告知 CMake 依賴路徑 ---
+    cache_entries = {
+        "CMAKE_BUILD_TYPE": "Release",
+        # 直接指定 Qt6 的安裝路徑
+        "Qt6_DIR": "/home/poyuan_shih/Qt/6.10.0/gcc_64/lib/cmake/Qt6", 
+        # 設定交叉編譯的編譯器
+        "CMAKE_C_COMPILER": "/usr/bin/aarch64-linux-gnu-gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/aarch64-linux-gnu-g++",
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "CMAKE_SYSTEM_PROCESSOR": "aarch64",
+        # 設定 Qt 主機路徑用於交叉編譯
+        "QT_HOST_PATH": "/home/poyuan_shih/Qt/6.10.0/gcc_64",
+        # 嘗試跳過找不到的 OpenGL 相關依賴
+        "OpenGL_GL_PREFERENCE": "LEGACY",
+        "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "ONLY",
+        "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "ONLY", 
+        "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "ONLY",
+        # 設定交叉編譯的根路徑
+        "CMAKE_FIND_ROOT_PATH": "/usr/aarch64-linux-gnu",
+        # GStreamer 通常透過 pkg-config 發現，但如果需要，可在此處加入其路徑
+    },
+    
+    # 移除 deps，因為 filegroup 不提供 CcInfo
+    # deps = ["@qt6//:cmake_config"],
+    visibility = ["//visibility:public"],
+)

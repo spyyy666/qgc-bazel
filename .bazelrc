@@ -1,0 +1,10 @@
+# //.bazelrc
+# 使用 Bzlmod 進行外部依賴管理。
+common --enable_bzlmod
+
+# 啟用現代 C++ 工具鏈解析
+build --incompatible_enable_cc_toolchain_resolution
+build --verbose_failures #幫助調試失敗
+
+# 定義 arm64 配置：當使用 --config=arm64 時，自動將目標平台設為 linux_arm64
+build:arm64 --platforms=//platforms:linux_arm64

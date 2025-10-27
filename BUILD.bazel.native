@@ -1,0 +1,19 @@
+# //BUILD.bazel.native - 用於原生 ARM64 環境的簡化配置
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+cmake(
+    name = "qgroundcontrol_cmake",
+    # QGC 原始碼來源
+    lib_source = "@qgroundcontrol_src//:all",
+    # 期望的輸出二進制檔案名稱
+    out_binaries = ["QGroundControl"],
+    
+    # --- 原生 ARM64 環境的簡化配置 ---
+    cache_entries = {
+        "CMAKE_BUILD_TYPE": "Release",
+        # 在原生環境中，Qt6 會通過系統套件管理器自動找到
+        # 不需要複雜的交叉編譯設定
+    },
+    
+    visibility = ["//visibility:public"],
+)

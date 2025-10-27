@@ -1,0 +1,37 @@
+# //MODULE.bazel
+module(
+    name = "qgc_bazel_build",
+    version = "0.1.0",
+)
+
+# 核心 Bazel 依賴：平台定義、外部 C/C++ 建構系統 (CMake) 整合
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+
+# --- 1. 獲取 QGroundControl 原始碼 ---
+# 使用 git_repository 規則將 QGC 專案引入為外部倉庫
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+git_repository(
+    name = "qgroundcontrol_src",
+    remote = "https://github.com/mavlink/qgroundcontrol.git",
+    # 使用最新的開發分支（需要 Qt6）
+    branch = "master",
+    init_submodules = True,
+    # 定義一個 filegroup 規則，使所有原始碼在 Bazel 中可用
+    build_file_content = """
+filegroup(
+    name = "all",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+# --- 2. 註冊工具鏈 ---
+register_toolchains("//toolchains:aarch64_linux_gnu_toolchain")
+
+# --- 3. 獲取系統安裝的 Qt 6 依賴 ---
+# 需要一個 module extension (在 third_party/qt/repositories.bzl 中定義) 來定義路徑
+qt6_ext = use_extension("//third_party/qt:repositories.bzl", "qt6_ext")
+use_repo(qt6_ext, "qt6")

@@ -1,0 +1,53 @@
+# Dockerfile for ARM64 QGroundControl build
+FROM --platform=linux/arm64 ubuntu:22.04
+
+# 避免 interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 安裝建構依賴
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    # Qt6 完整開發套件
+    qt6-base-dev \
+    qt6-declarative-dev \
+    qt6-tools-dev \
+    qt6-charts-dev \
+    qt6-multimedia-dev \
+    qt6-positioning-dev \
+    qt6-serialport-dev \
+    qt6-svg-dev \
+    qt6-websockets-dev \
+    # GStreamer 開發套件
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-good1.0-dev \
+    # OpenGL 相關
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libglu1-mesa-dev \
+    # 其他可能需要的依賴
+    libssl-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libx11-dev \
+    libxext-dev \
+    libxfixes-dev \
+    libxi-dev \
+    libxrender-dev \
+    libxcb1-dev \
+    libx11-xcb-dev \
+    libxcb-glx0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安裝 Bazelisk
+RUN curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-arm64 -o /usr/local/bin/bazel && \
+    chmod +x /usr/local/bin/bazel
+
+# 設定工作目錄
+WORKDIR /workspace
+
+# 預設執行命令
+CMD ["bazel", "build", "//:qgroundcontrol_cmake"]

@@ -1,0 +1,9 @@
+# //third_party/qt/BUILD.bazel
+package(default_visibility = ["//visibility:public"])
+
+# 這個 filegroup 定義了 CMake 尋找 Qt6 配置文件的路徑。
+# 此路徑對應於用戶目錄下的 Qt 6.10.0 安裝路徑。
+filegroup(
+    name = "cmake_config",
+    srcs = glob(["lib/cmake/Qt6/**"]),
+)
