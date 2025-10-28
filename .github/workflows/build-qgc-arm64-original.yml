@@ -32,8 +32,12 @@ jobs:
         disk-cache: ${{ github.workflow }}
 
     - name: Build QGroundControl
-      # 執行 Bazel 建構，使用定義的 arm64 配置
-      run: bazel build --config=arm64 //:qgroundcontrol_cmake
+      # 在原生 ARM64 環境中，使用簡化的配置
+      run: |
+        # 使用原生配置文件，避免交叉編譯設定
+        cp BUILD.bazel.native BUILD.bazel
+        # 建構 QGroundControl（不需要 --config=arm64，因為是原生環境）
+        bazel build //:qgroundcontrol_cmake
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
