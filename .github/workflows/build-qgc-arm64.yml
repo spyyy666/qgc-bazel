@@ -1,7 +1,7 @@
 # .github/workflows/build-qgc-arm64.yml
 name: 'Build QGroundControl for arm64'
 
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build-arm64:
