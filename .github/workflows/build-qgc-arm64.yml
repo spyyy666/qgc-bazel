@@ -37,7 +37,6 @@ jobs:
               qt6-base-dev \
               qt6-declarative-dev \
               qt6-tools-dev \
-              qt6-charts-dev \
               libgstreamer1.0-dev \
               libgstreamer-plugins-base1.0-dev \
               libgl1-mesa-dev \
@@ -47,7 +46,8 @@ jobs:
             # 安裝 Bazelisk
             curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-arm64 -o /usr/local/bin/bazel && \
             chmod +x /usr/local/bin/bazel && \
-            # 建構 QGroundControl（不需要交叉編譯配置，因為是原生 ARM64 環境）
+            # 建構 QGroundControl（使用原生配置）
+            cp BUILD.bazel.native BUILD.bazel && \
             bazel build //:qgroundcontrol_cmake
           "
 
