@@ -1,0 +1,43 @@
+# .github/workflows/build-qgc-arm64-original.yml
+name: Build QGroundControl for arm64 (Original Method)
+
+on: 
+  workflow_dispatch
+
+jobs:
+  build-arm64:
+    # --- 關鍵：使用原生 arm64 Runner ---
+    runs-on: ubuntu-latest-arm64
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Dependencies (Qt, GStreamer, Cross-Compiler)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+          qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-charts-dev \
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+          libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev \
+          pkg-config curl git
+
+    - name: Set up Bazel and Cache
+      uses: bazel-contrib/setup-bazel@0.15.0
+      with:
+        bazelisk-cache: true
+        repository-cache: true
+        disk-cache: ${{ github.workflow }}
+
+    - name: Build QGroundControl
+      # 執行 Bazel 建構，使用定義的 arm64 配置
+      run: bazel build --config=arm64 //:qgroundcontrol_cmake
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: qgroundcontrol-arm64
+        # 輸出路徑指向 cmake_external 規則的輸出
+        path: bazel-bin/qgroundcontrol_cmake/QGroundControl
