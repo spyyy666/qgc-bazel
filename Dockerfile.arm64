@@ -1,46 +1,117 @@
 # Dockerfile for ARM64 QGroundControl build
-FROM --platform=linux/arm64 ubuntu:22.04
+FROM ubuntu:24.04
 
 # 避免 interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 安裝建構依賴
+# 安裝基本系統工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
+    software-properties-common \
+    gnupg2 \
+    ca-certificates \
+    locales \
     git \
-    pkg-config \
-    # Qt6 完整開發套件
-    qt6-base-dev \
-    qt6-declarative-dev \
-    qt6-tools-dev \
-    qt6-charts-dev \
-    qt6-multimedia-dev \
-    qt6-positioning-dev \
-    qt6-serialport-dev \
-    qt6-svg-dev \
-    qt6-websockets-dev \
-    # GStreamer 開發套件
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev \
-    libgstreamer-plugins-good1.0-dev \
-    # OpenGL 相關
-    libgl1-mesa-dev \
-    libegl1-mesa-dev \
-    libglu1-mesa-dev \
-    # 其他可能需要的依賴
-    libssl-dev \
+    curl \
+    wget \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    pipx \
+    && rm -rf /var/lib/apt/lists/*
+
+# 設定 UTF-8 locale
+RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
+    locale-gen && \
+    update-locale LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# 啟用 universe repository
+RUN add-apt-repository -y universe && apt-get update
+
+# 安裝 QGC 依賴 (基於官方 install-dependencies-debian.sh)
+RUN apt-get install -y --no-install-recommends \
+    # Qt6 依賴
+    libatspi2.0-dev \
     libfontconfig1-dev \
-    libfreetype6-dev \
+    libfreetype-dev \
+    libgtk-3-dev \
+    libsm-dev \
     libx11-dev \
+    libx11-xcb-dev \
+    libxcb-cursor-dev \
+    libxcb-glx0-dev \
+    libxcb-icccm4-dev \
+    libxcb-image0-dev \
+    libxcb-keysyms1-dev \
+    libxcb-present-dev \
+    libxcb-randr0-dev \
+    libxcb-render-util0-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-shm0-dev \
+    libxcb-sync-dev \
+    libxcb-util-dev \
+    libxcb-xfixes0-dev \
+    libxcb-xinerama0-dev \
+    libxcb-xkb-dev \
+    libxcb1-dev \
     libxext-dev \
     libxfixes-dev \
     libxi-dev \
+    libxkbcommon-dev \
+    libxkbcommon-x11-dev \
     libxrender-dev \
-    libxcb1-dev \
-    libx11-xcb-dev \
-    libxcb-glx0-dev \
+    libunwind-dev \
+    # GStreamer
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-good1.0-dev \
+    libgstreamer-gl1.0-0 \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-ugly \
+    # 其他依賴
+    libusb-1.0-0-dev \
+    libvulkan-dev \
+    libpipewire-0.3-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# 安裝 pipx 工具並設定 PATH
+RUN pipx ensurepath
+ENV PATH="/root/.local/bin:$PATH"
+
+# 使用 aqtinstall 安裝 Qt 6.10.0 for ARM64
+ENV QT_VERSION=6.10.0
+ENV QT_PATH=/opt/Qt
+ENV QT_HOST=linux
+ENV QT_TARGET=desktop
+ENV QT_ARCH=linux_gcc_64
+ENV QT_ARCH_DIR=gcc_64
+ENV QT_ROOT_DIR=${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}
+ENV QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
+
+RUN pipx install aqtinstall && \
+    aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES}
+
+# 設定 Qt 環境變數
+ENV PATH="${QT_ROOT_DIR}/bin:$PATH"
+ENV PKG_CONFIG_PATH="${QT_ROOT_DIR}/lib/pkgconfig:$PKG_CONFIG_PATH"
+ENV LD_LIBRARY_PATH="${QT_ROOT_DIR}/lib:$LD_LIBRARY_PATH"
+ENV QT_PLUGIN_PATH="${QT_ROOT_DIR}/plugins"
+ENV QML2_IMPORT_PATH="${QT_ROOT_DIR}/qml"
+
+# 設定更穩定的編譯環境變數
+ENV CC=gcc
+ENV CXX=g++
+ENV CFLAGS="-O1 -g0"
+ENV CXXFLAGS="-O1 -g0"
+ENV MAKEFLAGS="-j1"
 
 # 安裝 Bazelisk
 RUN curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-arm64 -o /usr/local/bin/bazel && \

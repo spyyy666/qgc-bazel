@@ -3,13 +3,17 @@
 
 set -e
 
-echo "🐳 建構 ARM64 QGroundControl Docker 映像..."
-docker build -f Dockerfile.arm64 -t qgc-arm64-builder .
+echo "� 設定 QEMU 支援 ARM64 模擬..."
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+echo "�🐳 建構 ARM64 QGroundControl Docker 映像..."
+docker buildx build --platform linux/arm64 -f Dockerfile.arm64 -t qgc-arm64-builder .
 
 echo "🚀 在 ARM64 容器中建構 QGroundControl..."
 docker run --rm \
     --platform linux/arm64 \
     -v "$(pwd):/workspace" \
+    -v "$HOME/.cache/bazel:/root/.cache/bazel" \
     -w /workspace \
     qgc-arm64-builder \
     bash -c "
@@ -20,6 +24,8 @@ docker run --rm \
         echo '🔨 開始建構 QGroundControl...'
         # 使用簡化的原生配置
         cp BUILD.bazel.native BUILD.bazel
+        
+        
         bazel build //:qgroundcontrol_cmake
     "
 

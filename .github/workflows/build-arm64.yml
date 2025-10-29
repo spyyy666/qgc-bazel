@@ -1,0 +1,116 @@
+name: Build QGroundControl ARM64
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-arm64:
+    # 使用原生 ARM64 執行器避免 QEMU 模擬問題
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: linux/arm64
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Build ARM64 Docker image
+      run: |
+        echo "🔨 建置 ARM64 Docker 映像..."
+        docker buildx build \
+          --platform linux/arm64 \
+          --file docker/Dockerfile.arm64 \
+          --tag qgc-arm64-builder:latest \
+          --cache-from type=local,src=/tmp/.buildx-cache \
+          --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+          --load \
+          .
+        
+        # 移動快取以避免快取膨脹
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+    - name: Verify Docker image
+      run: |
+        echo "🔍 驗證 Docker 映像..."
+        docker run --rm --platform linux/arm64 qgc-arm64-builder:latest bash -c "
+          echo '=== 系統資訊 ==='
+          uname -a
+          echo '=== 編譯器 ==='
+          gcc --version | head -1
+          echo '=== Qt 模組 ==='
+          find /opt/Qt -name 'Qt6StateMachine' -type d
+          echo '=== 環境變數 ==='
+          echo \"MAKEFLAGS=\$MAKEFLAGS\"
+          echo \"CFLAGS=\$CFLAGS\"
+        "
+
+    - name: Run QGroundControl build
+      timeout-minutes: 90
+      run: |
+        echo "🚀 開始 QGroundControl ARM64 建置..."
+        docker run --rm \
+          --platform linux/arm64 \
+          -v ${{ github.workspace }}:/workspace \
+          -w /workspace \
+          qgc-arm64-builder:latest \
+          bash -c "
+            echo '=== 準備建置環境 ==='
+            cp BUILD.bazel.native BUILD.bazel
+            
+            echo '=== 建置設定檢查 ==='
+            cat BUILD.bazel | head -20
+            
+            echo '=== 取得 QGroundControl 原始碼 ==='
+            timeout 600 bazel fetch //:qgroundcontrol_cmake || {
+              echo '⚠️  原始碼下載逾時，嘗試繼續建置...'
+            }
+            
+            echo '=== 開始編譯（使用穩定設定）==='
+            bazel build //:qgroundcontrol_cmake \\
+              --verbose_failures \\
+              --spawn_strategy=standalone \\
+              --jobs=1 \\
+              --local_ram_resources=2048 \\
+              --local_cpu_resources=1 \\
+              --subcommands=true \\
+              --action_env=CC=gcc \\
+              --action_env=CXX=g++ \\
+              --action_env=MAKEFLAGS=-j1
+          "
+
+    - name: Check build results
+      run: |
+        echo "📋 檢查建置結果..."
+        if [ -d "bazel-bin" ]; then
+          echo "找到 bazel-bin 目錄："
+          find bazel-bin -name "*QGroundControl*" -type f | head -10
+        else
+          echo "❌ bazel-bin 目錄不存在"
+        fi
+
+    - name: Upload build artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: qgroundcontrol-arm64
+        path: |
+          bazel-bin/**/*QGroundControl*
+        retention-days: 7
