@@ -181,6 +181,8 @@ RUN mkdir -p /opt/qgc-dist && \
         fi
 
 FROM build AS runtime
+RUN useradd -m -s /bin/bash user \
+    && chown -R user:user /workspace
 RUN chown -R user:user /opt/qgc-dist || true
 USER user
 WORKDIR /home/user
