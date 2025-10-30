@@ -19,9 +19,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
     # 1️⃣ Checkout repo
     - name: Checkout repository
       uses: actions/checkout@v3
+
+    # 1.5️⃣ Clone QGroundControl source
+    - name: Clone QGroundControl source
+      run: git clone --depth=1 https://github.com/mavlink/qgroundcontrol.git qgc_src
 
     # 2️⃣ 設定 GCP 認證
     - name: Authenticate to Google Cloud
