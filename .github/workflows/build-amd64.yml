@@ -1,0 +1,25 @@
+name: Build QGroundControl AMD64
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-amd64:
+    name: "Build AMD64 (x86_64)"
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build AMD64 Docker image
+      run: |
+        echo "🔨 建置 AMD64 Docker 映像 (workflow 專用)..."
+        docker build \
+          --file docker/Dockerfile_workflow.amd64 \
+          --tag qgc-amd64-builder:latest \
+          --progress=plain \
+          .

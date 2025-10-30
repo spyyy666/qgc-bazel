@@ -1,0 +1,227 @@
+# Dockerfile.amd64 - 基於官方配置的 AMD64 建置環境
+FROM ubuntu:24.04 AS build
+
+# 設定環境變數
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Taipei
+
+# 安裝基本系統工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    gnupg2 \
+    ca-certificates \
+    locales \
+    git \
+    curl \
+    wget \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    pipx \
+    && rm -rf /var/lib/apt/lists/*
+
+# 設定 UTF-8 locale
+RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
+    locale-gen && \
+    update-locale LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# 啟用 universe repository
+RUN add-apt-repository -y universe && apt-get update
+
+# 安裝 QGC 依賴（基於官方 install-dependencies-debian.sh）
+RUN apt-get install -y --no-install-recommends \
+    # Core build tools
+    appstream \
+    binutils \
+    build-essential \
+    ccache \
+    cmake \
+    cppcheck \
+    file \
+    gdb \
+    git \
+    libfuse2 \
+    fuse3 \
+    libtool \
+    mold \
+    ninja-build \
+    patchelf \
+    pipx \
+    pkgconf \
+    python3 \
+    python3-pip \
+    rsync \
+    wget \
+    zsync \
+    # Qt6 依賴
+    libatspi2.0-dev \
+    libfontconfig1-dev \
+    libfreetype-dev \
+    libgtk-3-dev \
+    libsm-dev \
+    libx11-dev \
+    libx11-xcb-dev \
+    libxcb-cursor-dev \
+    libxcb-glx0-dev \
+    libxcb-icccm4-dev \
+    libxcb-image0-dev \
+    libxcb-keysyms1-dev \
+    libxcb-present-dev \
+    libxcb-randr0-dev \
+    libxcb-render-util0-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-shm0-dev \
+    libxcb-sync-dev \
+    libxcb-util-dev \
+    libxcb-xfixes0-dev \
+    libxcb-xinerama0-dev \
+    libxcb-xkb-dev \
+    libxcb1-dev \
+    libxext-dev \
+    libxfixes-dev \
+    libxi-dev \
+    libxkbcommon-dev \
+    libxkbcommon-x11-dev \
+    libxrender-dev \
+    libunwind-dev \
+    # GStreamer
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-good1.0-dev \
+    libgstreamer-gl1.0-0 \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-plugins-rtp \
+    gstreamer1.0-gl \
+    gstreamer1.0-libav \
+    gstreamer1.0-rtsp \
+    gstreamer1.0-x \
+    # 其他依賴
+    libusb-1.0-0-dev \
+    libvulkan-dev \
+    libpipewire-0.3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安裝 gstreamer1.0-qt6 (如果可用)
+RUN apt-get update && \
+    if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then \
+        apt-get install -y --no-install-recommends gstreamer1.0-qt6; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
+
+# 安裝 pipx 工具並設定 PATH
+RUN pipx ensurepath
+ENV PATH="/root/.local/bin:$PATH"
+
+# 使用 aqtinstall 安裝 Qt 6.10.0（基於官方配置）
+ENV QT_VERSION=6.10.0
+ENV QT_PATH=/opt/Qt
+ENV QT_HOST=linux
+ENV QT_TARGET=desktop
+ENV QT_ARCH=linux_gcc_64
+ENV QT_ARCH_DIR=gcc_64
+ENV QT_ROOT_DIR=${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}
+ENV QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
+
+RUN pipx install aqtinstall && \
+    aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES}
+
+# 設定 Qt 環境變數（基於官方配置）
+ENV QT_ROOT_PATH=/opt/Qt/6.10.0/gcc_64
+ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6
+ENV PATH=${QT_ROOT_PATH}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib
+ENV PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig
+ENV QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins
+ENV QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
+
+# 安裝 Bazel（AMD64 版本）
+RUN curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+    -o /usr/local/bin/bazel && \
+    chmod +x /usr/local/bin/bazel
+
+# Git 安全目錄設定
+RUN git config --global --add safe.directory /workspace
+
+# 建立工作目錄
+WORKDIR /workspace
+
+# 驗證安裝
+RUN echo "=== 驗證環境 ===" && \
+    gcc --version && \
+    bazel version && \
+    qmake6 --version && \
+    find /opt/Qt -name "Qt6StateMachine" -type d && \
+    echo "=== 環境準備完成 ==="
+
+# 建立非 root 使用者 user 並設定家目錄與 shell
+RUN useradd -m -s /bin/bash user \
+    && chown -R user:user /workspace
+
+# 安裝 FUSE 相關依賴，確保 AppImage 可掛載
+RUN apt-get update && apt-get install -y fuse libfuse2
+
+## 預先 clone QGroundControl 原始碼（可改用掛載，如果要最新可在 runtime 再更新）
+# 這裡使用 git clone 方式，若要固定 commit 可加上 --branch 或 checkout 指定 commit。
+ARG QGC_REPO_URL=https://github.com/mavlink/qgroundcontrol.git
+ARG QGC_REF=master
+RUN git clone --depth=1 --branch "$QGC_REF" $QGC_REPO_URL /workspace/qgc_src || echo "Skip clone if using external source mount"
+
+# 複製工作區的 BUILD.bazel.native（若存在）進入容器以便 Bazel 建置
+COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+COPY MODULE.bazel /workspace/MODULE.bazel
+
+# 將整個本地工作區內容複製進去（包含 toolchains/ 等必要套件），供預建置使用
+COPY . /workspace/
+
+# 使用 root 建置再轉換到 user
+USER root
+WORKDIR /workspace
+
+# 若有原始碼（qgc_src）則進行 Bazel build；否則等待外部掛載
+ARG QGC_SKIP_APPIMAGE=1
+ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
+RUN if [ -d qgc_src ]; then \
+            echo '=== 準備 Bazel 建置 (AMD64 預編譯) ==='; \
+            cp BUILD.bazel.native BUILD.bazel || true; \
+            sed -i 's#//toolchains:aarch64_linux_gnu_toolchain##g' BUILD.bazel || true; \
+            if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
+              echo '[Skip AppImage] 先執行 bazel fetch 以便取得外部 repo'; \
+              bazel fetch //:qgroundcontrol_cmake || true; \
+              echo '[Skip AppImage] 尋找並 patch CreateAppImage.cmake'; \
+              find /root/.cache/bazel -type f -path '*CreateAppImage.cmake' -exec sed -i '1i if(DEFINED ENV{QGC_SKIP_APPIMAGE} AND "$ENV{QGC_SKIP_APPIMAGE}" STREQUAL "1")\n  message(STATUS "[QGC] Skipping AppImage creation via ENV")\n  return()\nendif()' {} +; \
+            fi; \
+            bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures || echo 'Build may have partially failed'; \
+        else \
+            echo 'No source cloned; skip pre-build.'; \
+        fi
+
+# 尋找並複製 QGroundControl binary 與必要 plugins/runtime libs 到 /opt/qgc-dist
+RUN mkdir -p /opt/qgc-dist && \
+        REAL_BIN=$(find /root/.cache/bazel -path '*qgroundcontrol_cmake/bin/QGroundControl' -type f | head -1 || true) && \
+        if [ -n "$REAL_BIN" ]; then \
+            echo "Found binary: $REAL_BIN"; \
+            cp "$REAL_BIN" /opt/qgc-dist/QGroundControl; \
+            # 複製 Qt plugins 與 lib (最小集合，可視需要裁減) \ 
+            mkdir -p /opt/qgc-dist/plugins && cp -r $QT_PLUGIN_PATH/platforms /opt/qgc-dist/plugins/ 2>/dev/null || true; \
+            cp -r $QT_PLUGIN_PATH/xcbglintegrations /opt/qgc-dist/plugins/ 2>/dev/null || true; \
+        else \
+            echo 'QGroundControl binary not found during build stage.'; \
+        fi
+
+# Runtime 階段：只保留執行所需依賴（可再裁減）
+FROM build AS runtime
+# 直接沿用 build 階段的 Qt 與已複製的 /opt/qgc-dist，避免重新安裝失敗與遺失依賴
+RUN chown -R user:user /opt/qgc-dist || true
+USER user
+WORKDIR /home/user
+ENTRYPOINT ["/opt/qgc-dist/QGroundControl"]
