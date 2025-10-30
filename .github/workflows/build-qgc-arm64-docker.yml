@@ -1,7 +1,12 @@
 # .github/workflows/build-qgc-arm64-docker.yml
 name: Build QGroundControl for ARM64 (Docker)
 
-# on: [push, pull_request, workflow_dispatch]
+on:
+#   push:
+#     branches: [ main, develop ]
+#   pull_request:
+#     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-arm64:
