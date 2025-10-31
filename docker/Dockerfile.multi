@@ -52,12 +52,20 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
             ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
             echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt; \
         elif [ "$TARGETARCH" = "arm64" ]; then \
-            apt-get update && apt-get install -y --no-install-recommends \
-                qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
-                qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
-                qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev && \
-            ln -s /usr/lib/aarch64-linux-gnu/qt6 /opt/Qt/current || true && \
-            echo "Qt system packages for arm64 installed" > /qt-arch.txt; \
+            pipx install aqtinstall && \
+            QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; \
+            if aqt list-qt linux desktop --arch ${QT_VERSION} | grep -q "${QT_ARCH}"; then \
+                aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && \
+                ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
+                echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH} (aqtinstall)" > /qt-arch.txt; \
+            else \
+                apt-get update && apt-get install -y --no-install-recommends \
+                    qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
+                    qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
+                    qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev && \
+                ln -s /usr/lib/aarch64-linux-gnu/qt6 /opt/Qt/current || true && \
+                echo "Qt system packages for arm64 installed (fallback)" > /qt-arch.txt; \
+            fi; \
         else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi
 
 # Set Qt env for both arch
