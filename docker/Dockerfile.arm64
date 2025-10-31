@@ -1,10 +1,9 @@
-# Dockerfile for ARM64 QGroundControl build
-FROM ubuntu:24.04
+## Dockerfile.arm64 - Multi-stage ARM64 build mirroring amd64 flow
+FROM ubuntu:24.04 AS build
 
-# 避免 interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Taipei
 
-# 安裝基本系統工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     gnupg2 \
@@ -21,20 +20,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pipx \
     && rm -rf /var/lib/apt/lists/*
 
-# 設定 UTF-8 locale
-RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && \
-    locale-gen && \
-    update-locale LANG=en_US.UTF-8
-ENV LANG=en_US.UTF-8 \
-    LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8
+RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 
-# 啟用 universe repository
 RUN add-apt-repository -y universe && apt-get update
 
-# 安裝 QGC 依賴 (基於官方 install-dependencies-debian.sh)
 RUN apt-get install -y --no-install-recommends \
-    # Qt6 依賴
+    appstream \
+    binutils \
+    build-essential \
+    ccache \
+    cmake \
+    cppcheck \
+    file \
+    gdb \
+    git \
+    libfuse2 \
+    fuse3 \
+    libtool \
+    mold \
+    ninja-build \
+    patchelf \
+    pipx \
+    pkgconf \
+    python3 \
+    python3-pip \
+    rsync \
+    wget \
+    zsync \
     libatspi2.0-dev \
     libfontconfig1-dev \
     libfreetype-dev \
@@ -66,7 +79,6 @@ RUN apt-get install -y --no-install-recommends \
     libxkbcommon-x11-dev \
     libxrender-dev \
     libunwind-dev \
-    # GStreamer
     libgstreamer1.0-dev \
     libgstreamer-plugins-bad1.0-dev \
     libgstreamer-plugins-base1.0-dev \
@@ -76,49 +88,87 @@ RUN apt-get install -y --no-install-recommends \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-ugly \
-    # 其他依賴
+    gstreamer1.0-plugins-rtp \
+    gstreamer1.0-gl \
+    gstreamer1.0-libav \
+    gstreamer1.0-rtsp \
+    gstreamer1.0-x \
     libusb-1.0-0-dev \
     libvulkan-dev \
     libpipewire-0.3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 pipx 工具並設定 PATH
+RUN apt-get update && if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then apt-get install -y --no-install-recommends gstreamer1.0-qt6; fi && rm -rf /var/lib/apt/lists/*
+
 RUN pipx ensurepath
 ENV PATH="/root/.local/bin:$PATH"
 
-# 使用 aqtinstall 安裝 Qt 6.10.0 for ARM64
 ENV QT_VERSION=6.10.0
 ENV QT_PATH=/opt/Qt
 ENV QT_HOST=linux
 ENV QT_TARGET=desktop
-ENV QT_ARCH=linux_gcc_64
-ENV QT_ARCH_DIR=gcc_64
+ENV QT_ARCH=linux_arm64
+ENV QT_ARCH_DIR=arm64
 ENV QT_ROOT_DIR=${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}
 ENV QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
 
-RUN pipx install aqtinstall && \
-    aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES}
+RUN pipx install aqtinstall && aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES}
 
-# 設定 Qt 環境變數
-ENV PATH="${QT_ROOT_DIR}/bin:$PATH"
-ENV PKG_CONFIG_PATH="${QT_ROOT_DIR}/lib/pkgconfig:$PKG_CONFIG_PATH"
-ENV LD_LIBRARY_PATH="${QT_ROOT_DIR}/lib:$LD_LIBRARY_PATH"
-ENV QT_PLUGIN_PATH="${QT_ROOT_DIR}/plugins"
-ENV QML2_IMPORT_PATH="${QT_ROOT_DIR}/qml"
+ENV QT_ROOT_PATH=${QT_ROOT_DIR}
+ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6
+ENV PATH=${QT_ROOT_PATH}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib
+ENV PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig
+ENV QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins
+ENV QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
 
-# 設定更穩定的編譯環境變數
-ENV CC=gcc
-ENV CXX=g++
-ENV CFLAGS="-O1 -g0"
-ENV CXXFLAGS="-O1 -g0"
-ENV MAKEFLAGS="-j1"
+# Bazelisk ARM64
+ARG BAZELISK_VERSION=v1.20.0
+ENV BAZELISK_VERSION=${BAZELISK_VERSION}
+ENV BAZELISK_URL="https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-arm64"
+ARG BAZELISK_SHA256=""
+RUN echo "Downloading Bazelisk ${BAZELISK_VERSION} (arm64)" && \
+    curl -fSL "$BAZELISK_URL" -o /usr/local/bin/bazel && \
+    if [ -n "$BAZELISK_SHA256" ]; then echo "$BAZELISK_SHA256  /usr/local/bin/bazel" | sha256sum -c -; fi && \
+    chmod +x /usr/local/bin/bazel && bazel version || true
 
-# 安裝 Bazelisk
-RUN curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-arm64 -o /usr/local/bin/bazel && \
-    chmod +x /usr/local/bin/bazel
-
-# 設定工作目錄
+RUN git config --global --add safe.directory /workspace
 WORKDIR /workspace
 
-# 預設執行命令
-CMD ["bazel", "build", "//:qgroundcontrol_cmake"]
+RUN echo "=== ARM64 環境驗證 ===" && gcc --version && bazel version && echo "=== 完成 ==="
+
+COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+COPY MODULE.bazel /workspace/MODULE.bazel
+COPY . /workspace/
+
+USER root
+WORKDIR /workspace
+
+ARG QGC_SKIP_APPIMAGE=1
+ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
+RUN echo '=== Bazel Pre-Build (ARM64) ===' && \
+    cp BUILD.bazel.native BUILD.bazel || true && \
+    if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
+      echo '[Skip AppImage] bazel fetch //:qgroundcontrol_cmake'; \
+      bazel fetch //:qgroundcontrol_cmake || true; \
+      echo '[Skip AppImage] patch CreateAppImage.cmake (early return)'; \
+      find /root/.cache/bazel -type f -path '*CreateAppImage.cmake' -exec sed -i '1i if(DEFINED ENV{QGC_SKIP_APPIMAGE} AND "$ENV{QGC_SKIP_APPIMAGE}" STREQUAL "1")\n  message(STATUS "[QGC] Skipping AppImage creation via ENV")\n  return()\nendif()' {} +; \
+    fi && \
+    bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures || echo 'Build may have partially failed'
+
+RUN mkdir -p /opt/qgc-dist && \
+    REAL_BIN=$(find /root/.cache/bazel -path '*qgroundcontrol_cmake/bin/QGroundControl' -type f | head -1 || true) && \
+    if [ -n "$REAL_BIN" ]; then \
+      echo "Found binary: $REAL_BIN"; \
+      cp "$REAL_BIN" /opt/qgc-dist/QGroundControl; \
+      mkdir -p /opt/qgc-dist/plugins && cp -r $QT_PLUGIN_PATH/platforms /opt/qgc-dist/plugins/ 2>/dev/null || true; \
+      cp -r $QT_PLUGIN_PATH/xcbglintegrations /opt/qgc-dist/plugins/ 2>/dev/null || true; \
+    else \
+      echo 'QGroundControl binary not found during build stage.'; \
+    fi
+
+FROM build AS runtime
+RUN useradd -m -s /bin/bash user && chown -R user:user /workspace && chown -R user:user /opt/qgc-dist || true
+USER user
+WORKDIR /home/user
+ENTRYPOINT ["/opt/qgc-dist/QGroundControl"]

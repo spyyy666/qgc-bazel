@@ -19,7 +19,7 @@ jobs:
       run: |
         echo "🔨 建置 AMD64 Docker 映像 (workflow 專用)..."
         docker build \
-          --file docker/Dockerfile_workflow.amd64 \
+          --file docker/Dockerfile.amd64Flow \
           --tag qgc-amd64-builder:latest \
           --progress=plain \
           .

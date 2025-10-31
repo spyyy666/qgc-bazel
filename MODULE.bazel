@@ -1,4 +1,20 @@
 # //MODULE.bazel
+# Reproducibility note:
+# The git_repository for qgroundcontrol_src currently tracks branch = "master".
+# For deterministic CI builds, prefer pinning a commit:
+# git_repository(
+#   name = "qgroundcontrol_src",
+#   remote = "https://github.com/mavlink/qgroundcontrol.git",
+#   commit = "<FULL_SHA1>",  # replace with desired revision
+#   init_submodules = True,
+#   build_file_content = """
+# filegroup(
+#     name = "all",
+#     srcs = glob(["**"]),
+#     visibility = ["//visibility:public"],
+# )
+# """,
+# )
 module(
     name = "qgc_bazel_build",
     version = "0.1.0",
