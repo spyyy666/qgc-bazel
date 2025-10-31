@@ -1,4 +1,4 @@
-name: Build and Push Multi-Arch Docker Image
+name: Multi-Arch amd
 
 on:
   workflow_dispatch:
