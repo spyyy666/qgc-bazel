@@ -110,6 +110,7 @@ RUN mkdir -p /opt/qgc-dist && \
         cp -r $QT_PLUGIN_PATH/xcbglintegrations /opt/qgc-dist/plugins/ 2>/dev/null || true; \
     else \
         echo 'QGroundControl binary not found during build stage.'; \
+        exit 1; \
     fi
 
 FROM build AS runtime
