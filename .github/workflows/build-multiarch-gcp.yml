@@ -2,15 +2,12 @@ name: Build and Push Multi-Arch Docker Image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 env:
   REGION: asia-east1
   PROJECT_ID: docker-ci2
   REPO_NAME: spy
-  IMAGE_NAME: ec
+  IMAGE_NAME: multi
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -62,7 +59,7 @@ jobs:
           context: .
           push: true
           file: ./docker/Dockerfile.multi
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           tags: |
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
