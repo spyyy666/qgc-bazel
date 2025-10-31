@@ -39,24 +39,36 @@ RUN apt-get update && if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then a
 RUN pipx ensurepath
 ENV PATH="/root/.local/bin:$PATH"
 
-# Qt setup (dynamic per arch)
-ENV QT_VERSION=6.10.0 QT_PATH=/opt/Qt QT_HOST=linux QT_TARGET=desktop \
-    QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
-RUN pipx install aqtinstall && \
-    if [ "$TARGETARCH" = "amd64" ]; then QT_ARCH=linux_gcc_64; QT_ARCH_DIR=gcc_64; \
-    elif [ "$TARGETARCH" = "arm64" ]; then QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; \
-    else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi && \
-    aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && \
-    ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
-    echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt
+## Qt setup: use aqtinstall for amd64, system packages for arm64
+ARG QT_VERSION=6.10.0
+ARG QT_PATH=/opt/Qt
+ARG QT_HOST=linux
+ARG QT_TARGET=desktop
+ARG QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            pipx install aqtinstall && \
+            QT_ARCH=linux_gcc_64; QT_ARCH_DIR=gcc_64; \
+            aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && \
+            ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
+            echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            apt-get update && apt-get install -y --no-install-recommends \
+                qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
+                qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
+                qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev && \
+            ln -s /usr/lib/aarch64-linux-gnu/qt6 /opt/Qt/current || true && \
+            echo "Qt system packages for arm64 installed" > /qt-arch.txt; \
+        else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi
 
+# Set Qt env for both arch
 ENV QT_ROOT_PATH=/opt/Qt/current
-ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6 \
-    PATH=${QT_ROOT_PATH}/bin:${PATH} \
-    LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib \
-    PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig \
-    QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins \
-    QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
+ENV Qt6_DIR=${QT_ROOT_PATH}/cmake/Qt6 \
+        CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/cmake/Qt6:${QT_ROOT_PATH}:/usr/lib/aarch64-linux-gnu/cmake/Qt6:/usr/lib/aarch64-linux-gnu/qt6 \
+        PATH=${QT_ROOT_PATH}/bin:${PATH} \
+        LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib:${LD_LIBRARY_PATH} \
+        PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig \
+        QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins \
+        QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
 
 # Bazelisk (dynamic arch)
 ARG BAZELISK_VERSION=v1.20.0
