@@ -54,6 +54,7 @@ jobs:
           password: ${{ secrets.GCP_SA_KEY }}
 
       - name: Build and Push Multi-Arch Image
+        id: docker_build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -68,6 +69,15 @@ jobs:
           build-args: |
             QGC_SKIP_APPIMAGE=1
             BAZELISK_VERSION=v1.20.0
+
+      - name: Check Bazel Build Success
+        if: always()
+        run: |
+          # 檢查 build log 是否有 Bazel build 失敗訊息
+          if docker logs $(docker ps -a -q --filter ancestor=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}) | grep -q "Build did NOT complete successfully"; then
+            echo "Bazel build failed, exiting workflow."
+            exit 1
+          fi
 
       - name: Show manifest
         run: |
