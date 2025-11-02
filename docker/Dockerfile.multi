@@ -38,6 +38,7 @@ RUN apt-get update && if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then a
 
 RUN pipx ensurepath
 ENV PATH="/root/.local/bin:$PATH"
+ENV LD_LIBRARY_PATH=""
 
 ## Qt setup: use aqtinstall for amd64, system packages for arm64
 ARG QT_VERSION=6.10.0
@@ -46,7 +47,7 @@ ARG QT_HOST=linux
 ARG QT_TARGET=desktop
 ARG QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
 RUN echo "[Qt Setup] TARGETARCH=$TARGETARCH QT_VERSION=${QT_VERSION}" && \
-    echo "[Qt Setup] Modules: ${QT_MODULES}" && \
+    echo "[Qt Setup] Modules (requested): ${QT_MODULES}" && \
     if [ "$TARGETARCH" = "amd64" ]; then \
         echo "[Qt Setup] Using aqtinstall for amd64"; \
         pipx install aqtinstall && \
@@ -57,29 +58,53 @@ RUN echo "[Qt Setup] TARGETARCH=$TARGETARCH QT_VERSION=${QT_VERSION}" && \
             aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && break || sleep 5; \
         done; \
         if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt Setup][ERROR] Qt directory missing after aqt install"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi; \
-        ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
-        echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt; \
+    ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
+    echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (amd64 aqt)"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
         echo "[Qt Setup] Using aqtinstall or fallback for arm64"; \
         pipx install aqtinstall && \
         QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; \
-        echo "[Qt Setup] Listing available Qt versions (arm64 check)"; aqt list-qt ${QT_HOST} ${QT_TARGET} | head -50 || true; \
-        if aqt list-qt ${QT_HOST} ${QT_TARGET} | grep -q "${QT_VERSION}"; then \
+        echo "[Qt Setup] Listing available Qt versions (arm64)"; aqt list-qt ${QT_HOST} ${QT_TARGET} | head -50 || true; \
+        ARCH_LIST=$(aqt list-qt ${QT_HOST} ${QT_TARGET} --arch ${QT_VERSION} || true); \
+        echo "[Qt Setup] Available architectures for ${QT_VERSION}: ${ARCH_LIST}"; \
+        if echo "$ARCH_LIST" | grep -qw "$QT_ARCH"; then \
+            echo "[Qt Setup] linux_arm64 supported; probing modules"; \
+            MODULE_LIST=$(aqt list-qt ${QT_HOST} ${QT_TARGET} --modules ${QT_VERSION} ${QT_ARCH} || true); \
+            echo "[Qt Setup] Raw module list:"; echo "$MODULE_LIST" | sed 's/^/  - /'; \
+            REQUESTED_MODULES="${QT_MODULES}"; NORMALIZED_REQUEST=""; \
+            # Normalize some names (qt_base->qtbase, if present)
+            for M in $REQUESTED_MODULES; do \
+                case "$M" in qt_base) NORMALIZED_REQUEST="$NORMALIZED_REQUEST qtbase" ;; *) NORMALIZED_REQUEST="$NORMALIZED_REQUEST $M" ;; esac; \
+            done; \
+            FILTERED_MODULES=""; SKIPPED_MODULES=""; \
+            for M in $NORMALIZED_REQUEST; do \
+                if echo "$MODULE_LIST" | grep -qw "$M"; then FILTERED_MODULES="$FILTERED_MODULES $M"; else SKIPPED_MODULES="$SKIPPED_MODULES $M"; fi; \
+            done; \
+            echo "[Qt Setup] Filtered modules (aqt):${FILTERED_MODULES}"; \
+            echo "[Qt Setup] Skipped modules (will rely on apt or not available):${SKIPPED_MODULES}"; \
+            if [ -z "$FILTERED_MODULES" ]; then echo "[Qt Setup][WARN] No requested modules available; installing base only"; fi; \
             for attempt in 1 2 3; do \
-                echo "[Qt Setup] Attempt $attempt: aqt install-qt ${QT_VERSION} ${QT_ARCH}"; \
-                aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && break || sleep 5; \
+                echo "[Qt Setup] Attempt $attempt: aqt install-qt ${QT_VERSION} ${QT_ARCH} (modules:${FILTERED_MODULES})"; \
+                aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${FILTERED_MODULES} && break || sleep 5; \
             done; \
             if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt Setup][ERROR] Qt directory missing after aqt install (arm64)"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi; \
             ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
-            echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH} (aqtinstall)" > /qt-arch.txt; \
+            echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (arm64 aqt)"; \
+            if [ -n "$SKIPPED_MODULES" ]; then \
+                echo "[Qt Setup] Attempting apt install for skipped modules (best effort)"; \
+                apt-get update && apt-get install -y --no-install-recommends \
+                    qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
+                    qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
+                    qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev || true; \
+            fi; \
         else \
-            echo "[Qt Setup] ${QT_VERSION} not found in aqt list; using apt fallback"; \
+            echo "[Qt Setup][WARN] linux_arm64 not in architecture list for ${QT_VERSION}; using apt fallback"; \
             apt-get update && apt-get install -y --no-install-recommends \
                 qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
                 qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
                 qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev && \
             ln -s /usr/lib/aarch64-linux-gnu/qt6 /opt/Qt/current && \
-            echo "Qt system packages for arm64 installed (fallback)" > /qt-arch.txt; \
+            echo "[Qt Summary] Fallback=apt Target=${TARGETARCH} Path=/usr/lib/aarch64-linux-gnu/qt6"; \
         fi; \
     else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi && \
     echo "[Qt Setup] Symlink /opt/Qt/current ->"; ls -al /opt/Qt/ | grep current || true && \
