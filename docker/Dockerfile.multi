@@ -70,13 +70,37 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 
 # Set Qt env for both arch
 ENV QT_ROOT_PATH=/opt/Qt/current
-ENV Qt6_DIR=${QT_ROOT_PATH}/cmake/Qt6 \
-        CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/cmake/Qt6:${QT_ROOT_PATH}:/usr/lib/aarch64-linux-gnu/cmake/Qt6:/usr/lib/aarch64-linux-gnu/qt6 \
+# Correct Qt6_DIR for aqtinstall layout (lib/cmake/Qt6). Include both lib/cmake/Qt6 and root in CMAKE_PREFIX_PATH.
+ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6 \
+        CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/lib/cmake/Qt6:${QT_ROOT_PATH}:/usr/lib/aarch64-linux-gnu/cmake/Qt6:/usr/lib/aarch64-linux-gnu/qt6 \
         PATH=${QT_ROOT_PATH}/bin:${PATH} \
         LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib:${LD_LIBRARY_PATH} \
         PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig \
         QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins \
         QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
+
+# Early validation: ensure Qt6Config.cmake exists at expected location; show fallback search if missing.
+RUN if [ ! -f "${Qt6_DIR}/Qt6Config.cmake" ]; then \
+        echo "[Qt Validate] Qt6Config.cmake not found at ${Qt6_DIR}"; \
+        echo "[Qt Validate] Listing possible locations:"; \
+        find ${QT_ROOT_PATH} -maxdepth 5 -name Qt6Config.cmake || true; \
+        exit 1; \
+    else \
+        echo "[Qt Validate] Found Qt6Config.cmake at ${Qt6_DIR}"; \
+    fi
+
+# Optional minimal CMake probe to verify that key Qt modules resolve (Core Gui Widgets Location Positioning)
+RUN set -e; mkdir -p /tmp/qtprobe && cd /tmp/qtprobe && \
+    printf '%s\n' 'cmake_minimum_required(VERSION 3.22)' \
+                  'project(QtProbe LANGUAGES CXX)' \
+                  'set(CMAKE_AUTOMOC ON)' \
+                  'find_package(Qt6 COMPONENTS Core Gui Widgets Location Positioning REQUIRED)' \
+                  'add_executable(probe main.cpp)' \
+                  'target_link_libraries(probe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Location Qt6::Positioning)' > CMakeLists.txt && \
+    printf '%s\n' '#include <QApplication>' '#include <QWidget>' 'int main(int a,char** b){QApplication app(a,b); QWidget w; return 0;}' > main.cpp && \
+    cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DQt6_DIR="$Qt6_DIR" && \
+    cmake --build build --parallel && \
+    echo "[Qt Probe] SUCCESS" || (echo "[Qt Probe] FAILED"; exit 1)
 
 # Bazelisk (dynamic arch)
 ARG BAZELISK_VERSION=v1.20.0
