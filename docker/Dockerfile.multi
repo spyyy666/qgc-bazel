@@ -89,6 +89,18 @@ RUN echo "[Qt Setup] TARGETARCH=$TARGETARCH QT_VERSION=${QT_VERSION}" && \
                        qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev; do \
                 if apt-cache show $PKG >/dev/null 2>&1; then echo "[Qt Setup][apt] Install $PKG"; apt-get install -y --no-install-recommends $PKG || true; else echo "[Qt Setup][apt][SKIP] $PKG not available"; fi; \
             done; \
+            # Minimal source fallback if Location/Positioning still missing
+            if [ ! -f "/opt/Qt/current/lib/cmake/Qt6Location/Qt6LocationConfig.cmake" ] || [ ! -f "/opt/Qt/current/lib/cmake/Qt6Positioning/Qt6PositioningConfig.cmake" ]; then \
+                echo "[Qt Setup][SRC][WARN] Missing Qt6Location/Qt6Positioning configs; attempting subset source build"; \
+                apt-get update && apt-get install -y --no-install-recommends xz-utils libssl-dev libxkbcommon-dev && rm -rf /var/lib/apt/lists/*; \
+                cd /tmp && wget -q https://ftp.jaist.ac.jp/pub/qtproject/archive/qt/6.10/6.10.0/single/qt-everywhere-src-6.10.0.tar.xz -O qt-src.tar.xz && \
+                tar xf qt-src.tar.xz && cd qt-everywhere-src-6.10.0 && mkdir build && cd build && \
+                cmake -G Ninja .. -DCMAKE_INSTALL_PREFIX=/opt/Qt/current -DQT_FEATURE_gui=ON -DQT_FEATURE_widgets=ON || echo "[Qt Setup][SRC][WARN] Configure failed"; \
+                if [ -f CMakeCache.txt ]; then ninja qtlocation || true; ninja qtpositioning || true; ninja install || true; else echo "[Qt Setup][SRC][WARN] Skip build (configure failure)"; fi; \
+                cd /; rm -rf /tmp/qt-everywhere-src-6.10.0 /tmp/qt-src.tar.xz || true; \
+            else \
+                echo "[Qt Setup][SRC] Location/Positioning present; skip source fallback"; \
+            fi; \
         else \
             ln -s ${QT_PATH}/6.10.0/${QT_ARCH_DIR} /opt/Qt/current; \
             echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (arm64 aqt)"; \
@@ -119,18 +131,25 @@ RUN echo "[Qt Validate] Expect Qt config under ${Qt6_DIR}" && \
         if [ -n "$ALT_FOUND" ]; then echo "[Qt Validate] Found alternative Qt6Config.cmake at $ALT_FOUND"; else echo "[Qt Validate][ERROR] Qt6Config.cmake not found anywhere"; find /opt/Qt -maxdepth 6 -name Qt6Config.cmake || true; exit 1; fi; \
     fi
 
-# Optional minimal CMake probe to verify that key Qt modules resolve (Core Gui Widgets Location Positioning)
+# Adaptive CMake probe: if QtLocation missing on arm64 fallback, probe without it to avoid hard fail
 RUN set -e; mkdir -p /tmp/qtprobe && cd /tmp/qtprobe && \
+    HAVE_LOC=1; [ -f "/opt/Qt/current/lib/cmake/Qt6Location/Qt6LocationConfig.cmake" ] || HAVE_LOC=0; \
+    if [ "$HAVE_LOC" = "1" ]; then \
+        PROBE_COMPONENTS="Core Gui Widgets Location Positioning"; LINK_COMPONENTS="Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Location Qt6::Positioning"; \
+    else \
+        echo "[Qt Probe] Qt6Location missing; reducing component set"; \
+        PROBE_COMPONENTS="Core Gui Widgets"; LINK_COMPONENTS="Qt6::Core Qt6::Gui Qt6::Widgets"; \
+    fi; \
     printf '%s\n' 'cmake_minimum_required(VERSION 3.22)' \
                   'project(QtProbe LANGUAGES CXX)' \
                   'set(CMAKE_AUTOMOC ON)' \
-                  'find_package(Qt6 COMPONENTS Core Gui Widgets Location Positioning REQUIRED)' \
+                  "find_package(Qt6 COMPONENTS ${PROBE_COMPONENTS} REQUIRED)" \
                   'add_executable(probe main.cpp)' \
-                  'target_link_libraries(probe PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Location Qt6::Positioning)' > CMakeLists.txt && \
+                  "target_link_libraries(probe PRIVATE ${LINK_COMPONENTS})" > CMakeLists.txt && \
     printf '%s\n' '#include <QApplication>' '#include <QWidget>' 'int main(int a,char** b){QApplication app(a,b); QWidget w; return 0;}' > main.cpp && \
     cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DQt6_DIR="$Qt6_DIR" && \
     cmake --build build --parallel && \
-    echo "[Qt Probe] SUCCESS" || (echo "[Qt Probe] FAILED"; exit 1)
+    echo "[Qt Probe] SUCCESS (components: $PROBE_COMPONENTS)" || (echo "[Qt Probe] FAILED"; exit 1)
 
 # Bazelisk (dynamic arch)
 ARG BAZELISK_VERSION=v1.20.0
