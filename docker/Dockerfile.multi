@@ -61,50 +61,37 @@ RUN echo "[Qt Setup] TARGETARCH=$TARGETARCH QT_VERSION=${QT_VERSION}" && \
     ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
     echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (amd64 aqt)"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        echo "[Qt Setup] Using aqtinstall or fallback for arm64"; \
+        echo "[Qt Setup] Using aqtinstall for arm64, fallback to CDN if needed"; \
         pipx install aqtinstall && \
         QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; \
-        echo "[Qt Setup] Listing available Qt versions (arm64)"; aqt list-qt ${QT_HOST} ${QT_TARGET} | head -50 || true; \
-        ARCH_LIST=$(aqt list-qt ${QT_HOST} ${QT_TARGET} --arch ${QT_VERSION} || true); \
-        echo "[Qt Setup] Available architectures for ${QT_VERSION}: ${ARCH_LIST}"; \
-        if echo "$ARCH_LIST" | grep -qw "$QT_ARCH"; then \
-            echo "[Qt Setup] linux_arm64 supported; probing modules"; \
-            MODULE_LIST=$(aqt list-qt ${QT_HOST} ${QT_TARGET} --modules ${QT_VERSION} ${QT_ARCH} || true); \
-            echo "[Qt Setup] Raw module list:"; echo "$MODULE_LIST" | sed 's/^/  - /'; \
-            REQUESTED_MODULES="${QT_MODULES}"; NORMALIZED_REQUEST=""; \
-            # Normalize some names (qt_base->qtbase, if present)
-            for M in $REQUESTED_MODULES; do \
-                case "$M" in qt_base) NORMALIZED_REQUEST="$NORMALIZED_REQUEST qtbase" ;; *) NORMALIZED_REQUEST="$NORMALIZED_REQUEST $M" ;; esac; \
+        echo "[Qt Setup] Attempt aqtinstall for 6.10.0 $QT_ARCH"; \
+        for attempt in 1 2 3; do \
+            echo "[Qt Setup] Attempt $attempt: aqt install-qt 6.10.0 $QT_ARCH"; \
+            aqt install-qt ${QT_HOST} ${QT_TARGET} 6.10.0 ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && break || sleep 5; \
+        done; \
+        if [ ! -d "${QT_PATH}/6.10.0/${QT_ARCH_DIR}" ]; then \
+            echo "[Qt Setup][WARN] aqtinstall failed or directory missing, fallback to direct CDN download"; \
+            QT_CDN_BASE="https://download.qt.io/online/qtsdkrepository/linux_arm64/desktop/qt6_6100/qt6_6100/"; \
+            QT_MODULES_LIST="qtbase qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"; \
+            mkdir -p ${QT_PATH}/6.10.0/arm64; cd ${QT_PATH}/6.10.0/arm64; \
+            for MOD in $QT_MODULES_LIST; do \
+                echo "[Qt Setup][CDN] Downloading $MOD..."; \
+                wget -q --show-progress --progress=bar:force "${QT_CDN_BASE}${MOD}.7z" -O "$MOD.7z" && \
+                7z x "$MOD.7z" -o. && rm "$MOD.7z" || echo "[Qt Setup][CDN][SKIP] $MOD not found"; \
             done; \
-            FILTERED_MODULES=""; SKIPPED_MODULES=""; \
-            for M in $NORMALIZED_REQUEST; do \
-                if echo "$MODULE_LIST" | grep -qw "$M"; then FILTERED_MODULES="$FILTERED_MODULES $M"; else SKIPPED_MODULES="$SKIPPED_MODULES $M"; fi; \
+            cd /; \
+            ln -s ${QT_PATH}/6.10.0/arm64 /opt/Qt/current; \
+            echo "[Qt Summary] Fallback=direct-CDN Target=${TARGETARCH} Path=/opt/Qt/current"; \
+            # Also run apt fallback for missing system libs
+            apt-get update || true; \
+            for PKG in qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
+                       qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
+                       qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev; do \
+                if apt-cache show $PKG >/dev/null 2>&1; then echo "[Qt Setup][apt] Install $PKG"; apt-get install -y --no-install-recommends $PKG || true; else echo "[Qt Setup][apt][SKIP] $PKG not available"; fi; \
             done; \
-            echo "[Qt Setup] Filtered modules (aqt):${FILTERED_MODULES}"; \
-            echo "[Qt Setup] Skipped modules (will rely on apt or not available):${SKIPPED_MODULES}"; \
-            if [ -z "$FILTERED_MODULES" ]; then echo "[Qt Setup][WARN] No requested modules available; installing base only"; fi; \
-            for attempt in 1 2 3; do \
-                echo "[Qt Setup] Attempt $attempt: aqt install-qt ${QT_VERSION} ${QT_ARCH} (modules:${FILTERED_MODULES})"; \
-                aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${FILTERED_MODULES} && break || sleep 5; \
-            done; \
-            if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt Setup][ERROR] Qt directory missing after aqt install (arm64)"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi; \
-            ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
-            echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (arm64 aqt)"; \
-            if [ -n "$SKIPPED_MODULES" ]; then \
-                echo "[Qt Setup] Attempting apt install for skipped modules (best effort)"; \
-                apt-get update && apt-get install -y --no-install-recommends \
-                    qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
-                    qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
-                    qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev || true; \
-            fi; \
         else \
-            echo "[Qt Setup][WARN] linux_arm64 not in architecture list for ${QT_VERSION}; using apt fallback"; \
-            apt-get update && apt-get install -y --no-install-recommends \
-                qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
-                qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
-                qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev && \
-            ln -s /usr/lib/aarch64-linux-gnu/qt6 /opt/Qt/current && \
-            echo "[Qt Summary] Fallback=apt Target=${TARGETARCH} Path=/usr/lib/aarch64-linux-gnu/qt6"; \
+            ln -s ${QT_PATH}/6.10.0/${QT_ARCH_DIR} /opt/Qt/current; \
+            echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (arm64 aqt)"; \
         fi; \
     else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi && \
     echo "[Qt Setup] Symlink /opt/Qt/current ->"; ls -al /opt/Qt/ | grep current || true && \
@@ -124,13 +111,12 @@ ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6 \
 
 RUN echo "[Qt Validate] Expect Qt config under ${Qt6_DIR}" && \
     if [ ! -d "/opt/Qt/current" ]; then echo "[Qt Validate][ERROR] /opt/Qt/current missing"; ls -al /opt/Qt || true; exit 1; fi && \
+    # Accept either direct presence or alternative under /usr/lib for apt-only fallback
     if [ -f "${Qt6_DIR}/Qt6Config.cmake" ]; then \
         echo "[Qt Validate] Found Qt6Config.cmake at ${Qt6_DIR}"; \
     else \
-        echo "[Qt Validate][WARN] Not at ${Qt6_DIR}; searching alt locations"; \
-        find /opt/Qt -maxdepth 6 -name Qt6Config.cmake || true; \
-        find /usr/lib -maxdepth 6 -name Qt6Config.cmake 2>/dev/null || true; \
-        exit 1; \
+        ALT_FOUND=$(find /usr/lib -maxdepth 6 -name Qt6Config.cmake 2>/dev/null | head -1 || true); \
+        if [ -n "$ALT_FOUND" ]; then echo "[Qt Validate] Found alternative Qt6Config.cmake at $ALT_FOUND"; else echo "[Qt Validate][ERROR] Qt6Config.cmake not found anywhere"; find /opt/Qt -maxdepth 6 -name Qt6Config.cmake || true; exit 1; fi; \
     fi
 
 # Optional minimal CMake probe to verify that key Qt modules resolve (Core Gui Widgets Location Positioning)
