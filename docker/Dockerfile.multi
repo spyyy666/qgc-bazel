@@ -67,7 +67,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
             LOCAL_QT_HOST=${QT_HOST_ARM64}; \
             echo "[Qt][arm64] Install via aqt (host=${LOCAL_QT_HOST})"; \
             pipx install aqtinstall && \
-            QT_ARCH=linux_gcc_arm64; QT_ARCH_DIR=arm64; REPO_ARCH=${QT_REPO_ARCH_CORE_ARM64}; \
+            QT_ARCH=linux_gcc_arm64; QT_ARCH_DIR=gcc_arm64; REPO_ARCH=${QT_REPO_ARCH_CORE_ARM64}; \
             echo "[Qt][arm64] aqt host=${LOCAL_QT_HOST} arch=${QT_ARCH} repoCore=${REPO_ARCH}"; \
             aqt install-qt ${LOCAL_QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} || { echo "[Qt][arm64][ERROR] aqt install failed"; exit 1; } && \
             if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt][arm64][ERROR] Expected dir missing: ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi && \
