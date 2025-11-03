@@ -38,118 +38,52 @@ RUN apt-get update && if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then a
 
 RUN pipx ensurepath
 ENV PATH="/root/.local/bin:$PATH"
-ENV LD_LIBRARY_PATH=""
 
-## Qt setup: use aqtinstall for amd64, system packages for arm64
+## Qt setup
+# 說明:
+# 1. aqt install-qt 參數格式: aqt install-qt <host> <target> <version> <arch>
+#    - <host>: 在 Linux 上永遠是 'linux'，不是 'linux_arm64'
+#    - <arch>: x86_64 用 linux_gcc_64；ARM64 用 linux_arm64 (注意: 沒有 linux_gcc_arm64 這個 aqt 的 arch 名稱)
+# 2. Qt CDN 目錄名稱會出現 linux_gcc_arm64 (加了 gcc)；aqt 的 arm64 目錄名稱是 linux_arm64，兩者不同是正常的。
+# 3. 若後續需要自行抓 CDN，可另外用 REPO_ARCH_CORE=linux_gcc_arm64 區分。
+# 4. 不要把 aqt 的 host 換成 linux_arm64，會失敗，host 只代表平台家族，不代表目標架構。
 ARG QT_VERSION=6.10.0
 ARG QT_PATH=/opt/Qt
-ARG QT_HOST=linux
+ARG QT_HOST_AMD64=linux
+ARG QT_HOST_ARM64=linux_arm64
 ARG QT_TARGET=desktop
 ARG QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
-RUN echo "[Qt Setup] TARGETARCH=$TARGETARCH QT_VERSION=${QT_VERSION}" && \
-    echo "[Qt Setup] Modules (requested): ${QT_MODULES}" && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-        echo "[Qt Setup] Using aqtinstall for amd64"; \
-        pipx install aqtinstall && \
-        QT_ARCH=linux_gcc_64; QT_ARCH_DIR=gcc_64; \
-        echo "[Qt Setup] Listing available Qt versions (amd64)"; aqt list-qt ${QT_HOST} ${QT_TARGET} | head -50 || true; \
-        for attempt in 1 2 3; do \
-            echo "[Qt Setup] Attempt $attempt: aqt install-qt ${QT_VERSION} ${QT_ARCH}"; \
-            aqt install-qt ${QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && break || sleep 5; \
-        done; \
-        if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt Setup][ERROR] Qt directory missing after aqt install"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi; \
-    ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current && \
-    echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (amd64 aqt)"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        echo "[Qt Setup] Using aqtinstall for arm64, fallback to CDN if needed"; \
-        pipx install aqtinstall && \
-        QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; \
-        echo "[Qt Setup] Attempt aqtinstall for 6.10.0 $QT_ARCH"; \
-        for attempt in 1 2 3; do \
-            echo "[Qt Setup] Attempt $attempt: aqt install-qt 6.10.0 $QT_ARCH"; \
-            aqt install-qt ${QT_HOST} ${QT_TARGET} 6.10.0 ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && break || sleep 5; \
-        done; \
-        if [ ! -d "${QT_PATH}/6.10.0/${QT_ARCH_DIR}" ]; then \
-            echo "[Qt Setup][WARN] aqtinstall failed or directory missing, fallback to direct CDN download"; \
-            QT_CDN_BASE="https://download.qt.io/online/qtsdkrepository/linux_arm64/desktop/qt6_6100/qt6_6100/"; \
-            QT_MODULES_LIST="qtbase qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"; \
-            mkdir -p ${QT_PATH}/6.10.0/arm64; cd ${QT_PATH}/6.10.0/arm64; \
-            for MOD in $QT_MODULES_LIST; do \
-                echo "[Qt Setup][CDN] Downloading $MOD..."; \
-                wget -q --show-progress --progress=bar:force "${QT_CDN_BASE}${MOD}.7z" -O "$MOD.7z" && \
-                7z x "$MOD.7z" -o. && rm "$MOD.7z" || echo "[Qt Setup][CDN][SKIP] $MOD not found"; \
-            done; \
-            cd /; \
-            ln -s ${QT_PATH}/6.10.0/arm64 /opt/Qt/current; \
-            echo "[Qt Summary] Fallback=direct-CDN Target=${TARGETARCH} Path=/opt/Qt/current"; \
-            # Also run apt fallback for missing system libs
-            apt-get update || true; \
-            for PKG in qt6-base-dev qt6-multimedia-dev qt6-quick3d-dev qt6-tools-dev qt6-declarative-dev \
-                       qt6-positioning-dev qt6-sensors-dev qt6-serialport-dev qt6-shadertools-dev qt6-connectivity-dev \
-                       qt6-charts-dev qt6-imageformats-dev qt6-location-dev qt6-scxml-dev qt6-speech-dev; do \
-                if apt-cache show $PKG >/dev/null 2>&1; then echo "[Qt Setup][apt] Install $PKG"; apt-get install -y --no-install-recommends $PKG || true; else echo "[Qt Setup][apt][SKIP] $PKG not available"; fi; \
-            done; \
-            # Minimal source fallback if Location/Positioning still missing
-            if [ ! -f "/opt/Qt/current/lib/cmake/Qt6Location/Qt6LocationConfig.cmake" ] || [ ! -f "/opt/Qt/current/lib/cmake/Qt6Positioning/Qt6PositioningConfig.cmake" ]; then \
-                echo "[Qt Setup][SRC][WARN] Missing Qt6Location/Qt6Positioning configs; attempting subset source build"; \
-                apt-get update && apt-get install -y --no-install-recommends xz-utils libssl-dev libxkbcommon-dev && rm -rf /var/lib/apt/lists/*; \
-                cd /tmp && wget -q https://ftp.jaist.ac.jp/pub/qtproject/archive/qt/6.10/6.10.0/single/qt-everywhere-src-6.10.0.tar.xz -O qt-src.tar.xz && \
-                tar xf qt-src.tar.xz && cd qt-everywhere-src-6.10.0 && mkdir build && cd build && \
-                cmake -G Ninja .. -DCMAKE_INSTALL_PREFIX=/opt/Qt/current -DQT_FEATURE_gui=ON -DQT_FEATURE_widgets=ON || echo "[Qt Setup][SRC][WARN] Configure failed"; \
-                if [ -f CMakeCache.txt ]; then ninja qtlocation || true; ninja qtpositioning || true; ninja install || true; else echo "[Qt Setup][SRC][WARN] Skip build (configure failure)"; fi; \
-                cd /; rm -rf /tmp/qt-everywhere-src-6.10.0 /tmp/qt-src.tar.xz || true; \
-            else \
-                echo "[Qt Setup][SRC] Location/Positioning present; skip source fallback"; \
-            fi; \
-        else \
-            ln -s ${QT_PATH}/6.10.0/${QT_ARCH_DIR} /opt/Qt/current; \
-            echo "[Qt Summary] Arch=${QT_ARCH} Dir=${QT_ARCH_DIR} Target=${TARGETARCH} (arm64 aqt)"; \
-        fi; \
-    else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi && \
-    echo "[Qt Setup] Symlink /opt/Qt/current ->"; ls -al /opt/Qt/ | grep current || true && \
-    echo "[Qt Setup] Listing current Qt tree (top)" && ls -al /opt/Qt/current || true && \
-    find /opt/Qt/current -maxdepth 3 -type f -name Qt6Config.cmake -print || true
+ARG QT_REPO_ARCH_CORE_AMD64=linux_gcc_64
+ARG QT_REPO_ARCH_CORE_ARM64=linux_gcc_arm64
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            LOCAL_QT_HOST=${QT_HOST_AMD64}; \
+            pipx install aqtinstall && \
+            QT_ARCH=linux_gcc_64; QT_ARCH_DIR=gcc_64; \
+            echo "[Qt][amd64] aqt host=${LOCAL_QT_HOST} arch=${QT_ARCH}"; \
+            aqt install-qt ${LOCAL_QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} && \
+            ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
+            echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            LOCAL_QT_HOST=${QT_HOST_ARM64}; \
+            echo "[Qt][arm64] Install via aqt (host=${LOCAL_QT_HOST})"; \
+            pipx install aqtinstall && \
+            QT_ARCH=linux_arm64; QT_ARCH_DIR=arm64; REPO_ARCH=${QT_REPO_ARCH_CORE_ARM64}; \
+            echo "[Qt][arm64] aqt host=${LOCAL_QT_HOST} arch=${QT_ARCH} repoCore=${REPO_ARCH}"; \
+            aqt install-qt ${LOCAL_QT_HOST} ${QT_TARGET} ${QT_VERSION} ${QT_ARCH} -O ${QT_PATH} -m ${QT_MODULES} || { echo "[Qt][arm64][ERROR] aqt install failed"; exit 1; } && \
+            if [ ! -d "${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}" ]; then echo "[Qt][arm64][ERROR] Expected dir missing: ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR}"; ls -al ${QT_PATH}/${QT_VERSION} || true; exit 1; fi && \
+            ln -s ${QT_PATH}/${QT_VERSION}/${QT_ARCH_DIR} /opt/Qt/current || true && \
+            echo "Qt arch: ${QT_ARCH} (${QT_ARCH_DIR}) for ${TARGETARCH}" > /qt-arch.txt; \
+        else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi
 
 # Set Qt env for both arch
 ENV QT_ROOT_PATH=/opt/Qt/current
-# Correct Qt6_DIR for aqtinstall layout (lib/cmake/Qt6). Include both lib/cmake/Qt6 and root in CMAKE_PREFIX_PATH.
-ENV Qt6_DIR=${QT_ROOT_PATH}/lib/cmake/Qt6 \
-        CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/lib/cmake/Qt6:${QT_ROOT_PATH}:/usr/lib/aarch64-linux-gnu/cmake/Qt6:/usr/lib/aarch64-linux-gnu/qt6 \
+ENV Qt6_DIR=${QT_ROOT_PATH}/cmake/Qt6 \
+        CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/cmake/Qt6:${QT_ROOT_PATH}:/usr/lib/aarch64-linux-gnu/cmake/Qt6:/usr/lib/aarch64-linux-gnu/qt6 \
         PATH=${QT_ROOT_PATH}/bin:${PATH} \
         LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib:${LD_LIBRARY_PATH} \
         PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig \
         QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins \
         QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
-
-RUN echo "[Qt Validate] Expect Qt config under ${Qt6_DIR}" && \
-    if [ ! -d "/opt/Qt/current" ]; then echo "[Qt Validate][ERROR] /opt/Qt/current missing"; ls -al /opt/Qt || true; exit 1; fi && \
-    # Accept either direct presence or alternative under /usr/lib for apt-only fallback
-    if [ -f "${Qt6_DIR}/Qt6Config.cmake" ]; then \
-        echo "[Qt Validate] Found Qt6Config.cmake at ${Qt6_DIR}"; \
-    else \
-        ALT_FOUND=$(find /usr/lib -maxdepth 6 -name Qt6Config.cmake 2>/dev/null | head -1 || true); \
-        if [ -n "$ALT_FOUND" ]; then echo "[Qt Validate] Found alternative Qt6Config.cmake at $ALT_FOUND"; else echo "[Qt Validate][ERROR] Qt6Config.cmake not found anywhere"; find /opt/Qt -maxdepth 6 -name Qt6Config.cmake || true; exit 1; fi; \
-    fi
-
-# Adaptive CMake probe: if QtLocation missing on arm64 fallback, probe without it to avoid hard fail
-RUN set -e; mkdir -p /tmp/qtprobe && cd /tmp/qtprobe && \
-    HAVE_LOC=1; [ -f "/opt/Qt/current/lib/cmake/Qt6Location/Qt6LocationConfig.cmake" ] || HAVE_LOC=0; \
-    if [ "$HAVE_LOC" = "1" ]; then \
-        PROBE_COMPONENTS="Core Gui Widgets Location Positioning"; LINK_COMPONENTS="Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Location Qt6::Positioning"; \
-    else \
-        echo "[Qt Probe] Qt6Location missing; reducing component set"; \
-        PROBE_COMPONENTS="Core Gui Widgets"; LINK_COMPONENTS="Qt6::Core Qt6::Gui Qt6::Widgets"; \
-    fi; \
-    printf '%s\n' 'cmake_minimum_required(VERSION 3.22)' \
-                  'project(QtProbe LANGUAGES CXX)' \
-                  'set(CMAKE_AUTOMOC ON)' \
-                  "find_package(Qt6 COMPONENTS ${PROBE_COMPONENTS} REQUIRED)" \
-                  'add_executable(probe main.cpp)' \
-                  "target_link_libraries(probe PRIVATE ${LINK_COMPONENTS})" > CMakeLists.txt && \
-    printf '%s\n' '#include <QApplication>' '#include <QWidget>' 'int main(int a,char** b){QApplication app(a,b); QWidget w; return 0;}' > main.cpp && \
-    cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DQt6_DIR="$Qt6_DIR" && \
-    cmake --build build --parallel && \
-    echo "[Qt Probe] SUCCESS (components: $PROBE_COMPONENTS)" || (echo "[Qt Probe] FAILED"; exit 1)
 
 # Bazelisk (dynamic arch)
 ARG BAZELISK_VERSION=v1.20.0
