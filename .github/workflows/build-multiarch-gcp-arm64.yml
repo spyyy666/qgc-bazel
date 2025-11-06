@@ -7,7 +7,7 @@ env:
   REGION: asia-east1
   PROJECT_ID: docker-ci2
   REPO_NAME: spy
-  IMAGE_NAME: multi-arm64
+  IMAGE_NAME: multi-arm64-tesy
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
