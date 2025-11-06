@@ -49,5 +49,5 @@ register_toolchains("//toolchains:aarch64_linux_gnu_toolchain")
 
 # --- 3. 獲取系統安裝的 Qt 6 依賴 ---
 # 需要一個 module extension (在 third_party/qt/repositories.bzl 中定義) 來定義路徑
-qt6_ext = use_extension("//third_party/qt:repositories.bzl", "qt6_ext")
-use_repo(qt6_ext, "qt6")
+# qt6_ext = use_extension("//third_party/qt:repositories.bzl", "qt6_ext")
+# use_repo(qt6_ext, "qt6")

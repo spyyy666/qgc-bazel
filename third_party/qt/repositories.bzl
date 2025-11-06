@@ -9,4 +9,4 @@ def _qt6_impl(ctx):
         build_file = "@//third_party/qt:BUILD.bazel",
     )
 
-qt6_ext = module_extension(implementation = _qt6_impl)
+# qt6_ext = module_extension(implementation = _qt6_impl)
