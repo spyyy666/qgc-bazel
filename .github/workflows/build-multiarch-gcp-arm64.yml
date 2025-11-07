@@ -72,6 +72,7 @@ jobs:
           build-args: |
             QGC_SKIP_APPIMAGE=1
             BAZELISK_VERSION=v1.20.0
+          no-cache: true
 
       - name: Show manifest
         run: |
