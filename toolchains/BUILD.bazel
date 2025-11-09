@@ -3,41 +3,35 @@ load(":cc_toolchain_config.bzl", "cc_toolchain_config")
 # //toolchains/BUILD.bazel
 package(default_visibility = ["//visibility:public"])
 
-# 1. 實例化配置
 cc_toolchain_config(name = "aarch64_linux_gnu_config")
 
-# 2. 定義 cc_toolchain 實現
 cc_toolchain(
     name = "aarch64_linux_gnu_toolchain_impl",
-    all_files = ":empty",
-    compiler_files = ":empty",
-    dwp_files = ":empty",
-    linker_files = ":empty",
-    objcopy_files = ":empty",
-    strip_files = ":empty",
-    supports_param_files = 1,
-    toolchain_config = ":aarch64_linux_gnu_config",
     toolchain_identifier = "aarch64-linux-gnu-toolchain",
+    toolchain_config = ":aarch64_linux_gnu_config",
+    all_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    compiler_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    dwp_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    linker_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    objcopy_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    strip_files = "@aarch64_linux_gnu_toolchain//:all_files",
+    supports_param_files = 1,
 )
 
-# 空的 filegroup，因為我們使用系統安裝的工具鏈
 filegroup(
     name = "empty",
     srcs = [],
 )
 
-# 3. 定義頂層 toolchain，綁定約束
 toolchain(
     name = "aarch64_linux_gnu_toolchain",
-    # 如果使用 x86-64 CI Runner 執行交叉編譯：
+    
+    # Assuming the CI runner is x86_64 for cross-compilation
     exec_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
-    # 如果使用原生 arm64 CI Runner (報告推薦)：
-    # exec_compatible_with = ["@platforms//os:linux", "@platforms//cpu:arm64"],
 
-    # 目標平台必須是 arm64
     target_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:arm64",

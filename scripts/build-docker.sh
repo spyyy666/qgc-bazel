@@ -23,7 +23,7 @@ docker run --rm \
         echo
         echo '🔨 開始建構 QGroundControl...'
         # 使用簡化的原生配置
-        cp BUILD.bazel.native BUILD.bazel
+        cp BUILD.bazel BUILD.bazel
         
         
         bazel build //:qgroundcontrol_cmake

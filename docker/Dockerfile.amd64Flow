@@ -145,7 +145,7 @@ RUN echo "=== 驗證環境 ===" && \
     find /opt/Qt -name "Qt6StateMachine" -type d && \
     echo "=== 環境準備完成 ==="
 
-COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+COPY BUILD.bazel /workspace/BUILD.bazel
 COPY MODULE.bazel /workspace/MODULE.bazel
 COPY . /workspace/
 
@@ -155,7 +155,7 @@ WORKDIR /workspace
 ARG QGC_SKIP_APPIMAGE=1
 ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
 RUN echo '=== Bazel Pre-Build (AMD64, external git_repository) ===' && \
-        cp BUILD.bazel.native BUILD.bazel || true && \
+        cp BUILD.bazel BUILD.bazel || true && \
         sed -i 's#//toolchains:aarch64_linux_gnu_toolchain##g' BUILD.bazel || true && \
         if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
             echo '[Skip AppImage] bazel fetch //:qgroundcontrol_cmake'; \

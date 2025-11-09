@@ -176,8 +176,8 @@ ARG QGC_REPO_URL=https://github.com/mavlink/qgroundcontrol.git
 ARG QGC_REF=master
 RUN git clone --depth=1 --branch "$QGC_REF" $QGC_REPO_URL /workspace/qgc_src || echo "Skip clone if using external source mount"
 
-# 複製工作區的 BUILD.bazel.native（若存在）進入容器以便 Bazel 建置
-COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+# 複製工作區的 BUILD.bazel（若存在）進入容器以便 Bazel 建置
+COPY BUILD.bazel /workspace/BUILD.bazel
 COPY MODULE.bazel /workspace/MODULE.bazel
 
 # 將整個本地工作區內容複製進去（包含 toolchains/ 等必要套件），供預建置使用
@@ -191,7 +191,7 @@ WORKDIR /workspace
 ARG QGC_SKIP_APPIMAGE=1
 ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
 RUN echo '=== Bazel Pre-Build (AMD64, external git_repository) ===' && \
-        cp BUILD.bazel.native BUILD.bazel || true && \
+        cp BUILD.bazel BUILD.bazel || true && \
         sed -i 's#//toolchains:aarch64_linux_gnu_toolchain##g' BUILD.bazel || true && \
         if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
             echo '[Skip AppImage] bazel fetch //:qgroundcontrol_cmake'; \

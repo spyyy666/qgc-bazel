@@ -46,7 +46,7 @@ docker run --rm \
   --env DISPLAY=$DISPLAY \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   qgc-amd64-builder:latest bash -c "
-    echo '=== 使用原生建置設定 ==='; cp BUILD.bazel.native BUILD.bazel; \
+    echo '=== 使用原生建置設定 ==='; cp BUILD.bazel BUILD.bazel; \
     echo '=== 開始建置 (覆蓋) ==='; bazel build //:qgroundcontrol_cmake --jobs=$JOBS --verbose_failures || exit 1; \
     BIN=
 $(echo 'FIND_BIN=$(find /root/.cache/bazel -path '*qgroundcontrol_cmake/bin/QGroundControl' -type f | head -1 || true); echo $FIND_BIN') \

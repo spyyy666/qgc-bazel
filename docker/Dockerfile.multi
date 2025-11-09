@@ -99,7 +99,7 @@ WORKDIR /workspace
 RUN echo "=== Verify toolchain (${TARGETARCH}) ===" && gcc --version && bazel version && echo "=== OK ==="
 
 # Copy sources
-COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+COPY BUILD.bazel /workspace/BUILD.bazel
 COPY MODULE.bazel /workspace/MODULE.bazel
 COPY . /workspace/
 
@@ -107,7 +107,7 @@ ARG QGC_SKIP_APPIMAGE=1
 ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
 RUN --mount=type=cache,target=/root/.cache/bazel \
     echo "=== Bazel Pre-Build (${TARGETARCH}) ===" && \
-    cp BUILD.bazel.native BUILD.bazel || true && \
+    cp BUILD.bazel BUILD.bazel || true && \
     if [ "$TARGETARCH" = "amd64" ]; then sed -i 's#//toolchains:aarch64_linux_gnu_toolchain##g' BUILD.bazel || true; fi && \
     if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
         echo '[Skip AppImage] bazel fetch //:qgroundcontrol_cmake'; \

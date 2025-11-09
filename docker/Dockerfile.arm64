@@ -137,7 +137,7 @@ WORKDIR /workspace
 
 RUN echo "=== ARM64 環境驗證 ===" && gcc --version && bazel version && echo "=== 完成 ==="
 
-COPY BUILD.bazel.native /workspace/BUILD.bazel.native
+COPY BUILD.bazel /workspace/BUILD.bazel
 COPY MODULE.bazel /workspace/MODULE.bazel
 COPY . /workspace/
 
@@ -147,7 +147,7 @@ WORKDIR /workspace
 ARG QGC_SKIP_APPIMAGE=1
 ENV QGC_SKIP_APPIMAGE=${QGC_SKIP_APPIMAGE}
 RUN echo '=== Bazel Pre-Build (ARM64) ===' && \
-    cp BUILD.bazel.native BUILD.bazel || true && \
+    cp BUILD.bazel BUILD.bazel || true && \
     if [ "${QGC_SKIP_APPIMAGE}" = "1" ]; then \
       echo '[Skip AppImage] bazel fetch //:qgroundcontrol_cmake'; \
       bazel fetch //:qgroundcontrol_cmake || true; \
