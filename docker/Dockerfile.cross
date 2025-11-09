@@ -94,20 +94,15 @@ RUN --mount=type=cache,target=/root/.cache/bazel \
         fi && \
         echo '[Bazel build] Completed QGroundControl build.'
 
-RUN mkdir -p /opt/qgc-dist && \
-    REAL_BIN=$(find /root/.cache/bazel -path '*qgroundcontrol_cmake/bin/QGroundControl' -type f | head -1 || true) && \
-    if [ -n "$REAL_BIN" ]; then \
-        echo "Found binary: $REAL_BIN"; \
-        cp "$REAL_BIN" /opt/qgc-dist/QGroundControl; \
-        mkdir -p /opt/qgc-dist/plugins && cp -r $QT_PLUGIN_PATH/platforms /opt/qgc-dist/plugins/ 2>/dev/null || true; \
-        cp -r $QT_PLUGIN_PATH/xcbglintegrations /opt/qgc-dist/plugins/ 2>/dev/null || true; \
-    else \
-        echo 'QGroundControl binary not found during build stage.'; \
-        exit 1; \
-    fi
+# (Optional dist step removed) We will execute directly from bazel-bin.
+# Verify artifact exists early to fail fast.
+RUN ART=/workspace/bazel-bin/qgroundcontrol_cmake/bin/QGroundControl; \
+    echo "[Verify] Listing bazel-bin/qgroundcontrol_cmake/bin:"; ls -l /workspace/bazel-bin/qgroundcontrol_cmake/bin || true; \
+    if [ -e "$ART" ]; then echo "[Verify] Found artifact: $ART"; file "$ART" || true; else echo "[Verify][Warn] Artifact missing (will attempt to run anyway, container may fail at runtime): $ART"; fi
 
 FROM build AS runtime
-RUN useradd -m -s /bin/bash user && chown -R user:user /workspace && chown -R user:user /opt/qgc-dist || true
+RUN useradd -m -s /bin/bash user && chown -R user:user /workspace || true
 USER user
 WORKDIR /home/user
-ENTRYPOINT ["/opt/qgc-dist/QGroundControl"]
+# Run directly from bazel-bin (symlink resolves to real executable in output base)
+ENTRYPOINT ["/workspace/bazel-bin/qgroundcontrol_cmake/bin/QGroundControl"]
