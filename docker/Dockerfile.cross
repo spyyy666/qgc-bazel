@@ -78,26 +78,25 @@ COPY MODULE.bazel /workspace/MODULE.bazel
 COPY . /workspace/
 
 # Bazel build: arm64 cross-compile,
-RUN --mount=type=cache,target=/root/.cache/bazel \
-        echo "[Bazel build] TARGETARCH=$TARGETARCH" && \
-        echo '[Bazel build] fetch //:qgroundcontrol_cmake'; \
-        bazel fetch //:qgroundcontrol_cmake || true && \
-        echo '[Bazel build] Skip AppImage patch CreateAppImage.cmake (force skip)'; \
-        find /root/.cache/bazel -type f -path '*CreateAppImage.cmake' \
-            -exec sed -i '1i message(STATUS "[QGC] Skipping AppImage creation (forced)")\nreturn()\n' {} + && \
-        if [ "$TARGETARCH" = "arm64" ]; then \
-            echo '[Bazel build] bazel build --config=arm64'; \
-            bazel build --config=arm64 //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
-        else \
-            echo '[Bazel build] bazel build'; \
-            bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
-        fi && \
-        echo '[Bazel build] Completed QGroundControl build.'
+RUN echo "[Bazel build] TARGETARCH=$TARGETARCH" && \
+    echo '[Bazel build] fetch //:qgroundcontrol_cmake'; \
+    bazel fetch //:qgroundcontrol_cmake || true && \
+    echo '[Bazel build] Skip AppImage patch CreateAppImage.cmake (force skip)'; \
+    find /root/.cache/bazel -type f -path '*CreateAppImage.cmake' \
+        -exec sed -i '1i message(STATUS "[QGC] Skipping AppImage creation (forced)")\nreturn()\n' {} + && \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        echo '[Bazel build] bazel build --config=arm64'; \
+        bazel build --config=arm64 --experimental_enable_legacy_output_symlinks //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+    else \
+        echo '[Bazel build] bazel build'; \
+        bazel build --experimental_enable_legacy_output_symlinks //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+    fi && \
+    echo '[Bazel build] Completed QGroundControl build.'
 
 # (Optional dist step removed) We will execute directly from bazel-bin.
-# Verify artifact exists early to fail fast.
-RUN ART=/workspace/bazel-bin/qgroundcontrol_cmake/bin/QGroundControl; \
-    echo "[Verify] Listing bazel-bin/qgroundcontrol_cmake/bin:"; ls -l /workspace/bazel-bin/qgroundcontrol_cmake/bin || true; \
+# Verify artifact exists early to fail fast (dynamic bazel-bin path).
+RUN ART="$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl"; \
+    echo "[Verify] Listing $(dirname $ART):"; ls -l "$(dirname $ART)" || true; \
     if [ -e "$ART" ]; then echo "[Verify] Found artifact: $ART"; file "$ART" || true; else echo "[Verify][Warn] Artifact missing (will attempt to run anyway, container may fail at runtime): $ART"; fi
 
 FROM build AS runtime
@@ -105,4 +104,4 @@ RUN useradd -m -s /bin/bash user && chown -R user:user /workspace || true
 USER user
 WORKDIR /home/user
 # Run directly from bazel-bin (symlink resolves to real executable in output base)
-ENTRYPOINT ["/workspace/bazel-bin/qgroundcontrol_cmake/bin/QGroundControl"]
+ENTRYPOINT ["/bin/bash", "-c", "QGC_BIN=$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl; exec \"$QGC_BIN\""]
