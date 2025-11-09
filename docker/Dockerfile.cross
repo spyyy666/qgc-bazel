@@ -86,22 +86,28 @@ RUN echo "[Bazel build] TARGETARCH=$TARGETARCH" && \
         -exec sed -i '1i message(STATUS "[QGC] Skipping AppImage creation (forced)")\nreturn()\n' {} + && \
     if [ "$TARGETARCH" = "arm64" ]; then \
         echo '[Bazel build] bazel build --config=arm64'; \
-        bazel build --config=arm64 --experimental_enable_legacy_output_symlinks //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+        bazel build --config=arm64 //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
     else \
         echo '[Bazel build] bazel build'; \
-        bazel build --experimental_enable_legacy_output_symlinks //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+        bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
     fi && \
     echo '[Bazel build] Completed QGroundControl build.'
 
-# (Optional dist step removed) We will execute directly from bazel-bin.
+# (Optional result step removed) We will execute directly from bazel-bin.
 # Verify artifact exists early to fail fast (dynamic bazel-bin path).
-RUN ART="$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl"; \
+RUN cd /workspace && \
+    ART="$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl"; \
     echo "[Verify] Listing $(dirname $ART):"; ls -l "$(dirname $ART)" || true; \
-    if [ -e "$ART" ]; then echo "[Verify] Found artifact: $ART"; file "$ART" || true; else echo "[Verify][Warn] Artifact missing (will attempt to run anyway, container may fail at runtime): $ART"; fi
+    if [ -e "$ART" ]; then \
+        echo "[Verify] Found artifact: $ART"; file "$ART" || true; \
+        mkdir -p /workspace/result && cp "$ART" /workspace/result/QGroundControl; \
+    else \
+        echo "[Verify][Warn] Artifact missing (will attempt to run anyway, container may fail at runtime): $ART"; \
+    fi
 
 FROM build AS runtime
-RUN useradd -m -s /bin/bash user && chown -R user:user /workspace || true
+RUN useradd -m -s /bin/bash user && mkdir -p /home/user && chown -R user:user /workspace /home/user || true
+COPY --from=build /workspace/result/QGroundControl /home/user/QGroundControl
 USER user
 WORKDIR /home/user
-# Run directly from bazel-bin (symlink resolves to real executable in output base)
-ENTRYPOINT ["/bin/bash", "-c", "QGC_BIN=$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl; exec \"$QGC_BIN\""]
+ENTRYPOINT ["/home/user/QGroundControl"]
