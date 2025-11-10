@@ -86,10 +86,10 @@ RUN echo "[Bazel build] TARGETARCH=$TARGETARCH" && \
         -exec sed -i '1i message(STATUS "[QGC] Skipping AppImage creation (forced)")\nreturn()\n' {} + && \
     if [ "$TARGETARCH" = "arm64" ]; then \
         echo '[Bazel build] bazel build --config=arm64'; \
-        bazel build --config=arm64 //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+        bazel build --config=arm64 //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands || { echo 'Build failed'; exit 1; }; \
     else \
         echo '[Bazel build] bazel build'; \
-        bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands --sandbox_debug || { echo 'Build failed'; exit 1; }; \
+        bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands || { echo 'Build failed'; exit 1; }; \
     fi && \
     echo '[Bazel build] Completed QGroundControl build.'
 

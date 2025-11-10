@@ -8,7 +8,7 @@ cmake(
     # Pass configuration variables to CMake, equivalent to -D<KEY>=<VALUE>.
     # This is the primary mechanism for injecting dependency paths
     cache_entries = {
-        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_FLAGS": "-O1 -g0 -fno-strict-aliasing",
         "CMAKE_CXX_FLAGS": "-O1 -g0 -fno-strict-aliasing",
         "CMAKE_COMPILE_WARNING_AS_ERROR": "OFF",
