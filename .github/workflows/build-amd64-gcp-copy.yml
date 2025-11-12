@@ -1,0 +1,68 @@
+name: Build and Push Docker Image Copy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGION: asia-east1
+  PROJECT_ID: docker-ci2
+  REPO_NAME: spy
+  IMAGE_NAME: ec
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # 0️⃣ Cache Bazel
+    - name: Cache Bazel
+      uses: actions/cache@v4
+      with:
+        path: /tmp/bazel-cache
+        key: bazel-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event_name }}-${{ github.sha }}
+        restore-keys: |
+          bazel-cache-${{ runner.os }}-${{ github.ref_name }}-
+          bazel-cache-${{ runner.os }}-
+    # 1️⃣ Checkout repo
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    # 2️⃣ 設定 GCP 認證
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    # 3️⃣ 設定 GCP SDK
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+    # 4️⃣ 設定 Docker 可以 push 到 Artifact Registry
+    - name: Configure Docker for GCP
+      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+    # 5️⃣ Setup Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    # 6️⃣ Build and Push Docker image with cache
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./docker/Dockerfile.amd64Flow
+        push: true
+        tags: |
+          ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    # 7️⃣ Verify image pushed
+    - name: Verify image pushed
+      run: |
+        echo "✅ Docker image pushed:"
+        echo "   ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:latest"
+        echo "   ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
