@@ -1,10 +1,10 @@
 name: Build and Push Docker Image
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches:
-      - main
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   branches:
+  #     - main
   workflow_dispatch:
 
 env:
