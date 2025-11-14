@@ -1,0 +1,44 @@
+name: Build QGC Docker Images
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  # Required by the following GitHub actions:
+  # - checkout@3
+  contents: write
+  # Required by the following GitHub actions:
+  # - CodeCoverageSummary@v1.3.0
+  # - sticky-pull-request-comment@v2
+  checks: write
+  # Required by the following GitHub actions:
+  # - sticky-pull-request-comment@v2
+  pull-requests: write
+  id-token: "write"
+  # Required by 'gh pr edit' https://github.com/cli/cli/issues/6274
+  repository-projects: read
+
+jobs:
+  build-mavzen-runtime:
+    uses: Asus-Robotics-and-AI-Center/gha-dam-c-src/.github/workflows/docker-build-push.yaml@749a770ae9a2f3f87b7f3ff268620b51ed04a50c
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runs_on: ARM64-Large_Ubuntu-24.04
+            target_arch: linux/arm64
+    with:
+        runs_on: ${{ matrix.runs_on }}
+        app_name: dock
+        service_name: araic-qgc-arm64
+        context: .
+        dockerfile: docker-images/tools/araic-qgc-arm64/Dockerfile
+        build_args: |
+            BUILDKIT_INLINE_CACHE=1
+            J_NUM=8
+            TARGETARCH=${{ matrix.target_arch }}
+        release_tag: latest
+    secrets:
+        provider: ${{ secrets.DOCK_PROVIDER }}
+        tkn_privileged_gsa: ${{ secrets.TKN_PRIVILEGED_GSA }}
