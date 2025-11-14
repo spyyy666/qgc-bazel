@@ -1,0 +1,114 @@
+
+FROM ubuntu:24.04 AS build
+
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive TZ=Asia/Taipei
+
+# Base tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common gnupg2 ca-certificates locales git curl wget \
+    build-essential cmake ninja-build python3 python3-pip pipx \
+    && rm -rf /var/lib/apt/lists/*
+
+# cross-compiler
+RUN apt-get update && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config;
+
+RUN sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
+
+RUN add-apt-repository -y universe && apt-get update
+
+# QGC deps (shared across arches)
+RUN apt-get install -y --no-install-recommends \
+    appstream binutils build-essential ccache cmake cppcheck file gdb git \
+    libfuse2 fuse3 libtool mold ninja-build patchelf pipx pkgconf python3 python3-pip rsync wget zsync \
+    libatspi2.0-dev libfontconfig1-dev libfreetype-dev libgtk-3-dev libsm-dev libx11-dev libx11-xcb-dev \
+    libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+    libxcb-present-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-shape0-dev \
+    libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
+    libxcb1-dev libxext-dev libxfixes-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
+    libunwind-dev libgstreamer1.0-dev libgstreamer-plugins-bad1.0-dev libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-good1.0-dev libgstreamer-gl1.0-0 gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-plugins-rtp gstreamer1.0-gl \
+    gstreamer1.0-libav gstreamer1.0-rtsp gstreamer1.0-x libusb-1.0-0-dev libvulkan-dev libpipewire-0.3-dev \
+    qt6-wayland \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && if apt-cache show gstreamer1.0-qt6 >/dev/null 2>&1; then apt-get install -y --no-install-recommends gstreamer1.0-qt6; fi && rm -rf /var/lib/apt/lists/*
+
+RUN pipx ensurepath
+ENV PATH="/root/.local/bin:$PATH"
+
+ARG QT_VERSION=6.10.0
+ARG QT_PATH=/opt/Qt
+ARG QT_TARGET=desktop
+ARG QT_MODULES="qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors qtscxml"
+RUN pipx install aqtinstall && \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        aqt install-qt linux_arm64 desktop ${QT_VERSION} linux_gcc_arm64 -O ${QT_PATH} -m ${QT_MODULES} || { echo "[Qt][arm64] aqt install failed"; exit 1; }; \
+        ln -sf ${QT_PATH}/${QT_VERSION}/gcc_arm64 /opt/Qt/current; \
+    else \
+        aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O ${QT_PATH} -m ${QT_MODULES} || { echo "[Qt][amd64] aqt install failed"; exit 1; }; \
+        ln -sf ${QT_PATH}/${QT_VERSION}/gcc_64 /opt/Qt/current; \
+    fi
+
+# Set Qt env for cross-compile
+ENV QT_ROOT_PATH=/opt/Qt/current
+ENV Qt6_DIR=${QT_ROOT_PATH}/cmake/Qt6 \
+    CMAKE_PREFIX_PATH=${QT_ROOT_PATH}/cmake/Qt6:${QT_ROOT_PATH} \
+    PATH=${QT_ROOT_PATH}/bin:${PATH} \
+    LD_LIBRARY_PATH=${QT_ROOT_PATH}/lib:${LD_LIBRARY_PATH} \
+    PKG_CONFIG_PATH=${QT_ROOT_PATH}/lib/pkgconfig \
+    QT_PLUGIN_PATH=${QT_ROOT_PATH}/plugins \
+    QML2_IMPORT_PATH=${QT_ROOT_PATH}/qml
+
+# Bazelisk (dynamic arch)
+ARG BAZELISK_VERSION=v1.20.0
+ARG BAZELISK_SHA256=""
+RUN if [ "$TARGETARCH" = "amd64" ]; then BZ_ARCH=amd64; elif [ "$TARGETARCH" = "arm64" ]; then BZ_ARCH=arm64; else echo "Unsupported TARGETARCH=$TARGETARCH"; exit 1; fi; \
+    curl -fsSL https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${BZ_ARCH} -o /usr/local/bin/bazel && \
+    if [ -n "$BAZELISK_SHA256" ]; then echo "$BAZELISK_SHA256  /usr/local/bin/bazel" | sha256sum -c -; fi && \
+    chmod +x /usr/local/bin/bazel && bazel version || true
+
+RUN git config --global --add safe.directory /workspace
+WORKDIR /workspace
+
+# Copy sources
+COPY BUILD.bazel /workspace/BUILD.bazel
+COPY MODULE.bazel /workspace/MODULE.bazel
+COPY . /workspace/
+
+# Bazel build: arm64 cross-compile,
+RUN echo "[Bazel build] TARGETARCH=$TARGETARCH" && \
+    echo '[Bazel build] fetch //:qgroundcontrol_cmake'; \
+    bazel fetch //:qgroundcontrol_cmake || true && \
+    echo '[Bazel build] Skip AppImage patch CreateAppImage.cmake (force skip)'; \
+    find /root/.cache/bazel -type f -path '*CreateAppImage.cmake' \
+        -exec sed -i '1i message(STATUS "[QGC] Skipping AppImage creation (forced)")\nreturn()\n' {} + && \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        echo '[Bazel build] bazel build --config=arm64'; \
+        bazel build --config=arm64 //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands || { echo 'Build failed'; exit 1; }; \
+    else \
+        echo '[Bazel build] bazel build'; \
+        bazel build //:qgroundcontrol_cmake --jobs=$(nproc) --verbose_failures --subcommands || { echo 'Build failed'; exit 1; }; \
+    fi && \
+    echo '[Bazel build] Completed QGroundControl build.'
+
+# (Optional result step removed) We will execute directly from bazel-bin.
+# Verify artifact exists early to fail fast (dynamic bazel-bin path).
+RUN cd /workspace && \
+    ART="$(bazel info bazel-bin)/qgroundcontrol_cmake/bin/QGroundControl"; \
+    echo "[Verify] Listing $(dirname $ART):"; ls -l "$(dirname $ART)" || true; \
+    if [ -e "$ART" ]; then \
+        echo "[Verify] Found artifact: $ART"; file "$ART" || true; \
+        mkdir -p /workspace/result && cp "$ART" /workspace/result/QGroundControl; \
+    else \
+        echo "[Verify][Warn] Artifact missing (will attempt to run anyway, container may fail at runtime): $ART"; \
+    fi
+
+FROM build AS runtime
+RUN useradd -m -s /bin/bash user && mkdir -p /home/user && chown -R user:user /workspace /home/user || true
+COPY --from=build /workspace/result/QGroundControl /home/user/QGroundControl
+USER user
+WORKDIR /home/user
+ENTRYPOINT ["/home/user/QGroundControl"]
