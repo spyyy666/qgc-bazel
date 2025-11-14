@@ -7,7 +7,7 @@ env:
   REGION: asia-east1
   PROJECT_ID: docker-ci2
   REPO_NAME: spy
-  IMAGE_NAME: multi-arm64-test-cross
+  IMAGE_NAME: multi-arm64-test-cross-wayland
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
